@@ -1,0 +1,7 @@
+# Editor and agent working state
+*.code-workspace
+.worktrees
+.claude/settings.local.json
+
+# Local test environment overrides. Never commit a real secret.
+Test/.env

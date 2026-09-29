@@ -1,0 +1,42 @@
+<?xml version="1.0" ?>
+<!--
+  COmanage Registry Application Team Enroller Plugin Database Schema
+
+  @link          https://github.com/cilogon/ApplicationTeamEnroller
+  @package       registry-plugin
+  @since         COmanage Registry v4.6.0
+-->
+<!--
+  While this schema mostly works with database prefixes, foreign key constraints
+  must be specified in raw SQL, which needs the prefixed table name.
+
+  Test/run.sh checks that the tables declared here exist after `cake database`
+  runs. Adding a table here means raising min_plugin_tables in Test/run.sh;
+  Test/Case/HarnessSelfTest.php fails until the two agree.
+-->
+<schema version="0.3">
+  <table name="application_team_enrollers">
+    <field name="id" type="I">
+      <key />
+      <autoincrement />
+    </field>
+    <field name="co_enrollment_flow_wedge_id" type="I">
+      <constraint>REFERENCES cm_co_enrollment_flow_wedges(id)</constraint>
+    </field>
+    <field name="created" type="T" />
+    <field name="modified" type="T" />
+    <field name="application_team_enroller_id" type="I">
+      <constraint>REFERENCES cm_application_team_enrollers(id)</constraint>
+    </field>
+    <field name="revision" type="I" />
+    <field name="deleted" type="L" />
+    <field name="actor_identifier" type="C" size="256" />
+
+    <index name="application_team_enrollers_i1">
+      <col>co_enrollment_flow_wedge_id</col>
+    </index>
+    <index name="application_team_enrollers_i2">
+      <col>application_team_enroller_id</col>
+    </index>
+  </table>
+</schema>

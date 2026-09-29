@@ -1,0 +1,70 @@
+# Hermetic test suite: the merge gate for every pull request.
+#
+# Runs the same Test/run.sh a developer runs locally, against the digest-pinned
+# COmanage Registry 4.6.x image plus a companion database. It needs no
+# repository secrets, so it runs on pull requests from forks, where GitHub
+# withholds secrets.
+#
+# See docs/plans/2026-09-29-0856-feat-application-team-enroller-plan.md
+# (KTD15, U1).
+
+name: Hermetic tests
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+# No secrets are used by this workflow. Keep it that way.
+permissions:
+  contents: read
+
+concurrency:
+  group: hermetic-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hermetic-suite:
+    name: Hermetic suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out the plugin under test
+        uses: actions/checkout@v4
+
+      - name: Run the hermetic suite
+        # run.sh brings up Registry + the database with this checkout mounted
+        # as the plugin, applies the checkout's schema, runs the suite, and
+        # tears the environment down. It exits non-zero if any gate fails,
+        # which fails this job and blocks the merge. Both images are pinned by
+        # digest in Test/docker/docker-compose.yml.
+        run: Test/run.sh
+
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out the full history
+        uses: actions/checkout@v4
+        with:
+          # gitleaks scans history, so a shallow clone would hide an earlier
+          # commit that leaked a credential.
+          fetch-depth: 0
+
+      - name: Scan for committed credentials
+        # The config is named explicitly rather than left to discovery under
+        # the bind mount, so a scan that cannot read it fails loudly instead of
+        # silently falling back. See .gitleaks.toml for why its [extend] block
+        # matters.
+        #
+        # gitleaks v8.18.4 from GHCR, pinned by its multi-platform index digest.
+        run: |
+          docker run --rm \
+            -v "$PWD:/repo" \
+            ghcr.io/gitleaks/gitleaks@sha256:75bdb2b2f4db213cde0b8295f13a88d6b333091bbfbf3012a4e083d00d31caba \
+            detect --source=/repo --config=/repo/.gitleaks.toml \
+            --redact --verbose --no-banner
