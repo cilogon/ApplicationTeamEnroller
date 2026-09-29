@@ -142,7 +142,12 @@ echo "==> Verifying the suite ran the expected number of tests..."
 #       existing-member lookup), RoutingTest (committing a response and routing
 #       each request), and ApprovalTest (approve, deny, withdraw, memberships
 #       per KTD9, login linking, races, rollback, provisioning after commit).
-min_tests_run=160
+#  176  U10 -- NotificationTest (decider notifications by pending reason,
+#       resolution on decision and withdrawal, inviter notices, researcher
+#       emails without the comment) and AteEnrollmentRequestsControllerTest
+#       (queue scoping, R25 fields, link_required, refused direct posts,
+#       AE17, deny, POST only, the notification link).
+min_tests_run=176
 tests_run="$(sed -n 's/^\([0-9][0-9]*\) tests run, [0-9][0-9]* failed\.$/\1/p' \
   <<< "$suite_tail" | head -n 1)"
 if [ -z "$tests_run" ]; then

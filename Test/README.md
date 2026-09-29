@@ -125,7 +125,8 @@ the second CO's clauses. The map also removes the COs' groups and the
 nestings, memberships, identifiers, and history records hanging off them,
 because creating an application creates its access group (KTD10), and the COs'
 OrgIdentities with their identifiers, email addresses, and links, because
-approving a request can link a login (U7).
+approving a request can link a login (U7), and the notifications about the
+COs' people and groups, because a pending request notifies its deciders (U10).
 CakePHP 2.x's PHPUnit fixture machinery does not run on this stack.
 
 **Read-after-write.** CakePHP 2's `DboSource` caches every `SELECT` result
@@ -169,13 +170,19 @@ controller, without loading the declared components, so an action that calls
 ## Email
 
 Code that sends mail uses `CakeEmail` with a configuration a test can replace
-(for invitations, `AteInvitation::$emailConfig`). Tests set it to
+(for invitations, `AteInvitation::$emailConfig`; for decision emails to the
+researcher, `AteEnrollmentRequest::$emailConfig`). Tests set it to
 `AteRecordingTransport::emailConfig()` (`Test/lib/AteMailTransport.php`),
 which records each message in `AteRecordingTransport::$sent` instead of
 sending it; setting `AteRecordingTransport::$fail` makes the next send throw.
 Reset both, and the model's configuration back to `'default'`, in
 `tearDown()`. `Router::url(..., true)` has no real host in the console, so
 assert on a link's path and token, not its host.
+
+Registry's `CoNotification` always sends through `CakeEmail('default')`, which
+the test image does not configure, so a notification test's recipients must
+have no email address; the notification row, not a message, is what the test
+asserts on.
 
 ## The compounding norm
 

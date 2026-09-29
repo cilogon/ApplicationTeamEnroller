@@ -461,7 +461,8 @@ class AteInvitation extends ApplicationTeamEnrollerAppModel {
    * Withdraw one pending_decision request (R18, AE17, KTD8): it becomes
    * revoked and records who withdrew it. Other requests on the invitation
    * are unaffected (R30). Only a request of the CO still pending a decision
-   * moves, so a second withdraw, or one racing a decision, loses.
+   * moves, so a second withdraw, or one racing a decision, loses. A
+   * successful withdrawal resolves the request's decider notification (U10).
    *
    * The caller checks AteAuthzComponent::mayWithdrawRequest() first.
    *
@@ -506,7 +507,15 @@ class AteInvitation extends ApplicationTeamEnrollerAppModel {
       throw new RuntimeException(_txt('er.db.save-a', array('AteEnrollmentRequest')));
     }
 
-    return $Request->getAffectedRows() === 1;
+    if($Request->getAffectedRows() !== 1) {
+      return false;
+    }
+
+    // The request no longer awaits a decision, so its decider notification
+    // is resolved (R35, KTD12). This never undoes the withdrawal.
+    $Request->resolvePendingNotification($requestId, $actorCoPersonId);
+
+    return true;
   }
 
   /**

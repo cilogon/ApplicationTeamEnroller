@@ -51,6 +51,15 @@ $cm_application_team_enroller_texts['en_US'] = array(
   'pl.applicationteamenroller.en.request_status.revoked'              => 'Revoked',
   'pl.applicationteamenroller.en.request_status.expired'              => 'Expired',
 
+  'pl.applicationteamenroller.en.pending_reason.approval'      => 'Approval required',
+  'pl.applicationteamenroller.en.pending_reason.mismatch'      => 'Login does not match the invitation',
+  'pl.applicationteamenroller.en.pending_reason.link_required' => 'Login would be linked to an existing person',
+
+  'pl.applicationteamenroller.en.decided_by_role.approver'       => 'Approver',
+  'pl.applicationteamenroller.en.decided_by_role.inviting_admin' => 'Inviting Administrator',
+  'pl.applicationteamenroller.en.decided_by_role.co_admin'       => 'CO Administrator',
+  'pl.applicationteamenroller.en.decided_by_role.automatic'      => 'Automatic',
+
   // CO configuration menu (cmPluginMenus)
   'pl.applicationteamenroller.menu.applications'   => 'Team Enroller: Applications',
   'pl.applicationteamenroller.menu.research_teams' => 'Team Enroller: Research Teams',
@@ -60,6 +69,7 @@ $cm_application_team_enroller_texts['en_US'] = array(
   // check access themselves (KTD16).
   'pl.applicationteamenroller.menu.invite'      => 'Invite Researcher',
   'pl.applicationteamenroller.menu.invitations' => 'Invitations',
+  'pl.applicationteamenroller.menu.queue'       => 'Decision Queue',
 
   // Application fields
   'pl.applicationteamenroller.fd.application.name' => 'Name',
@@ -191,6 +201,56 @@ The link can be used for one response and expires on (@EXPIRES).
   'pl.applicationteamenroller.er.query' => 'A database query failed.',
   // History record comment when approval links a login: identifier, type
   'pl.applicationteamenroller.rs.login.linked' => 'Linked login %1$s (%2$s) by Application Team Enroller approval',
+
+  // Decision queue (U10)
+  'pl.applicationteamenroller.queue' => 'Decision Queue',
+  'pl.applicationteamenroller.queue.desc' => 'Requests awaiting a decision that you may decide. Approving adds the researcher to the listed research teams.',
+  'pl.applicationteamenroller.queue.none' => 'There are no requests awaiting your decision.',
+  'pl.applicationteamenroller.queue.request' => 'Decide Request',
+  'pl.applicationteamenroller.queue.review' => 'Review',
+  'pl.applicationteamenroller.queue.approve' => 'Approve',
+  'pl.applicationteamenroller.queue.deny' => 'Deny',
+  'pl.applicationteamenroller.queue.deny.confirm' => 'Deny this request? The researcher will not be added to its research teams.',
+  'pl.applicationteamenroller.fd.request.researcher' => 'Researcher',
+  'pl.applicationteamenroller.fd.request.researcher.none' => 'No CO Person yet',
+  'pl.applicationteamenroller.fd.request.person_status' => 'CO Person Status',
+  'pl.applicationteamenroller.fd.request.login' => 'Login',
+  'pl.applicationteamenroller.fd.request.login_emails' => 'Emails From Login',
+  'pl.applicationteamenroller.fd.request.login_emails.none' => 'None reported',
+  'pl.applicationteamenroller.fd.request.mismatch' => 'Login Mismatch',
+  'pl.applicationteamenroller.fd.request.mismatch.desc' => 'The login did not report the invited address, or the address belongs to another person.',
+  'pl.applicationteamenroller.fd.request.link_target' => 'Would Link To',
+  'pl.applicationteamenroller.fd.request.link_target.desc' => 'Approving links this login to the existing person who owns the invited address.',
+  'pl.applicationteamenroller.fd.request.reason' => 'Why Pending',
+  'pl.applicationteamenroller.fd.request.responded' => 'Responded',
+  'pl.applicationteamenroller.fd.request.deciding_role' => 'You Decide As',
+  'pl.applicationteamenroller.fd.request.comment' => 'Comment (optional)',
+  'pl.applicationteamenroller.fd.request.comment.desc' => 'Kept for audit. It is not sent to the researcher.',
+  'pl.applicationteamenroller.rs.request.approved' => 'Request approved.',
+  'pl.applicationteamenroller.rs.request.denied' => 'Request denied.',
+  'pl.applicationteamenroller.er.request.not_decidable' => 'You cannot decide this request, or it is no longer awaiting a decision.',
+
+  // Notifications (KTD12). Pending: application, invited address. Decided:
+  // application, invited address, outcome.
+  'pl.applicationteamenroller.notification.pending' => 'A request for %1$s from %2$s awaits a decision',
+  'pl.applicationteamenroller.notification.decided' => 'The request for %1$s from %2$s was decided: %3$s',
+
+  // Decision emails to the researcher (R36): application, CO, research
+  // teams. The decider's comment is never included.
+  'pl.applicationteamenroller.decision.email.subject.approved' => 'Access to %1$s in %2$s approved',
+  'pl.applicationteamenroller.decision.email.body.approved' => 'Hello,
+
+Your request for access to %1$s in %2$s has been approved.
+
+Research teams: %3$s
+
+You can now log in to %1$s.',
+  'pl.applicationteamenroller.decision.email.subject.denied' => 'Access to %1$s in %2$s not approved',
+  'pl.applicationteamenroller.decision.email.body.denied' => 'Hello,
+
+Your request for access to %1$s in %2$s was not approved.
+
+If you have questions, please contact the person who invited you.',
 
   // Newcomer enrollment flow checks. Each names one problem, so the
   // administrator knows what to change on the flow.

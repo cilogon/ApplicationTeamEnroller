@@ -18,6 +18,13 @@
  * off, and the researcher is provisioned once after the commit, so a
  * rolled-back approval never reaches a provisioner.
  *
+ * It also carries U10's announcement hooks (R35-R37, KTD12, KTD13), which
+ * run after a status change has committed and never undo it:
+ * afterResponse() after commitResponse() (U8 and the newcomer wedge),
+ * afterDecision() after approve() and deny() (the decision queue), and
+ * resolvePendingNotification(), which AteInvitation::withdrawRequest() calls.
+ * The engine methods themselves send nothing.
+ *
  * @link          https://github.com/cilogon/ApplicationTeamEnroller
  * @package       registry-plugin
  * @since         COmanage Registry v4.6.0
@@ -25,6 +32,7 @@
 
 App::uses('ApplicationTeamEnrollerAppModel', 'ApplicationTeamEnroller.Model');
 App::uses('AteSetting', 'ApplicationTeamEnroller.Model');
+App::uses('CakeEmail', 'Network/Email');
 
 class AteEnrollmentRequest extends ApplicationTeamEnrollerAppModel {
   // Define class name for cake
@@ -125,6 +133,11 @@ class AteEnrollmentRequest extends ApplicationTeamEnrollerAppModel {
   const ReasonOtherPerson     = 'address_on_other_person';
   const ReasonAmbiguousOwner  = 'ambiguous_owner';
   const ReasonLookupError     = 'lookup_error';
+
+  // The CakeEmail configuration used for decision emails to the researcher
+  // (R36, KTD13): a config name from app/Config/email.php, or a config
+  // array. Tests point it at a recording transport.
+  public $emailConfig = 'default';
 
   // How many callers have CoGroupMember provisioning suspended, and whether
   // it was enabled before the first did (suspendMembershipProvisioning())
@@ -687,6 +700,534 @@ class AteEnrollmentRequest extends ApplicationTeamEnrollerAppModel {
     $ok = $this->AteInvitation->withdrawRequest($coId, $requestId, $actorCoPersonId);
 
     return $this->decisionResult($coId, $requestId, $ok);
+  }
+
+  /**
+   * Announce what a committed response did (R35, R36, R37): register the
+   * decider notification for each request that became pending_decision, and
+   * for each request approved automatically email the researcher and notify
+   * the inviting admin. No decider notification is registered for an
+   * automatic approval. U8 and the newcomer wedge call this after
+   * commitResponse(), once their own transaction (if any) has committed; it
+   * does nothing for a response this call did not commit.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Integer $coId   CO ID
+   * @param  Array   $result commitResponse() result
+   * @return Array           'pending_notifications' (CoNotification IDs, keyed by request ID; only
+   *                         requests that got one) and 'decisions' (announceDecision() result, keyed
+   *                         by the ID of each automatically approved request)
+   */
+
+  public function afterResponse($coId, $result) {
+    $ret = array('pending_notifications' => array(), 'decisions' => array());
+
+    if(empty($result['handled']) || empty($result['requests'])) {
+      return $ret;
+    }
+
+    foreach($result['requests'] as $reqId => $r) {
+      if($r['status'] === AteRequestStatusEnum::PendingDecision) {
+        $ids = $this->notifyPending($coId, $reqId);
+
+        if(!empty($ids)) {
+          $ret['pending_notifications'][(int)$reqId] = $ids;
+        }
+      } elseif($r['status'] === AteRequestStatusEnum::Approved
+               && $r['decided_by_role'] === AteDecidedByRoleEnum::Automatic) {
+        $ret['decisions'][(int)$reqId] = $this->announceDecision($coId, $reqId, null);
+      }
+    }
+
+    return $ret;
+  }
+
+  /**
+   * Announce a decision (R35, R36, R37): resolve the request's decider
+   * notification and, for an approval or denial, email the researcher and
+   * notify the inviting admin. The decision queue calls this after approve()
+   * or deny(); it does nothing for a call that lost the race (handled false),
+   * so each decision is announced once.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Integer $coId            CO ID
+   * @param  Array   $result          approve(), deny(), or withdraw() result
+   * @param  Integer $actorCoPersonId Deciding CoPerson ID
+   * @return Array                    'resolved' (Boolean, a decider notification was resolved by this
+   *                                  call), 'researcher_emailed' (Boolean), 'inviter_notifications'
+   *                                  (CoNotification IDs)
+   */
+
+  public function afterDecision($coId, $result, $actorCoPersonId) {
+    $ret = array('resolved' => false, 'researcher_emailed' => false, 'inviter_notifications' => array());
+
+    if(empty($result['handled']) || empty($result['request_id'])) {
+      return $ret;
+    }
+
+    $ret['resolved'] = $this->resolvePendingNotification($result['request_id'], $actorCoPersonId);
+
+    if(in_array($result['status'], array(AteRequestStatusEnum::Approved, AteRequestStatusEnum::Denied), true)) {
+      $ret = array_merge($ret, $this->announceDecision($coId, $result['request_id'], $actorCoPersonId));
+    }
+
+    return $ret;
+  }
+
+  /**
+   * Register the decider notification for a pending request (R35, KTD12),
+   * addressed by its pending_reason (KTD7, R24):
+   *
+   * - approval: the application's approver group;
+   * - mismatch: the inviting admin while they still hold that role (in the
+   *   application's admin group, or a CO administrator), else the admin group;
+   * - link_required, or anything else: the CO admins group.
+   *
+   * The notification must be resolved, and its source is the request's
+   * decisionUrl() string, which resolvePendingNotification() matches. CO
+   * administrators may decide any request but are notified only for
+   * link_required. A request that is not pending, or already has an open
+   * decider notification, gets none. A failure is logged, never thrown.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Integer $coId      CO ID
+   * @param  Integer $requestId AteEnrollmentRequest ID
+   * @return Array              CoNotification IDs registered (empty if none)
+   */
+
+  public function notifyPending($coId, $requestId) {
+    try {
+      $d = $this->announcementDetails($coId, $requestId);
+
+      if(!$d || $d['status'] !== AteRequestStatusEnum::PendingDecision) {
+        return array();
+      }
+
+      $url = $this->decisionUrl($requestId);
+
+      if($this->openNotificationCount($url) > 0) {
+        return array();
+      }
+
+      $recipient = $this->deciderRecipient($coId, $d);
+
+      if(!$recipient) {
+        $this->log('ApplicationTeamEnroller found no decider to notify for request ' . $requestId, LOG_ERROR);
+        return array();
+      }
+
+      // The researcher is the subject. With none (an ambiguous link target),
+      // a recipient group stands in, so Registry can still find the CO.
+      $subjectGroup = (!$d['researcher_co_person_id'] && $recipient[0] === 'cogroup') ? $recipient[1] : null;
+
+      $ids = ClassRegistry::init('CoNotification')->register(
+        $d['researcher_co_person_id'],
+        $subjectGroup,
+        $d['invitee_co_person_id'],
+        $recipient[0],
+        $recipient[1],
+        AteNotificationActionEnum::PendingDecision,
+        _txt('pl.applicationteamenroller.notification.pending', array($d['application_name'], $d['invited_email'])),
+        $url,
+        true
+      );
+
+      return array_map('intval', (array)$ids);
+    } catch(Exception $e) {
+      $this->log('ApplicationTeamEnroller could not notify the deciders of request ' . $requestId . ': '
+                 . $e->getMessage(), LOG_ERROR);
+      return array();
+    }
+  }
+
+  /**
+   * Resolve a request's open decider notification (R35, KTD12), by the same
+   * decisionUrl() string it was registered with. Called on decision and on
+   * withdrawal. A failure is logged, never thrown.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Integer $requestId       AteEnrollmentRequest ID
+   * @param  Integer $actorCoPersonId Resolving CoPerson ID, or null
+   * @return Boolean                  True if an open notification was resolved
+   */
+
+  public function resolvePendingNotification($requestId, $actorCoPersonId) {
+    $url = $this->decisionUrl($requestId);
+
+    try {
+      if($this->openNotificationCount($url) === 0) {
+        return false;
+      }
+
+      ClassRegistry::init('CoNotification')->resolveFromSource($url, $actorCoPersonId ? (int)$actorCoPersonId : null);
+    } catch(Exception $e) {
+      $this->log('ApplicationTeamEnroller could not resolve the notification for request ' . $requestId . ': '
+                 . $e->getMessage(), LOG_ERROR);
+      return false;
+    }
+
+    return $this->openNotificationCount($url) === 0;
+  }
+
+  /**
+   * Notify an invitation's inviting admin (R37): an informational
+   * notification to acknowledge, pointing at the invitation. Used for
+   * decisions (AteNotificationActionEnum::Decided); U11 uses it for expiry
+   * (AteNotificationActionEnum::Expired). A failure is logged, never thrown.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Integer $coId              CO ID
+   * @param  Integer $invitationId      AteInvitation ID
+   * @param  String  $action            AteNotificationActionEnum value
+   * @param  String  $comment           Notification text
+   * @param  Integer $subjectCoPersonId Researcher's CoPerson ID, or null
+   * @param  Integer $actorCoPersonId   Acting CoPerson ID, or null
+   * @return Array                      CoNotification IDs registered (empty if none)
+   */
+
+  public function notifyInviter($coId, $invitationId, $action, $comment, $subjectCoPersonId, $actorCoPersonId) {
+    try {
+      $rows = $this->sqlRows('SELECT inviter_co_person_id FROM ' . $this->tablePrefix
+                             . 'ate_invitations WHERE id = ? AND co_id = ?',
+                             array((int)$invitationId, (int)$coId));
+
+      if(empty($rows[0]['inviter_co_person_id'])) {
+        return array();
+      }
+
+      $ids = ClassRegistry::init('CoNotification')->register(
+        $subjectCoPersonId ? (int)$subjectCoPersonId : null,
+        null,
+        $actorCoPersonId ? (int)$actorCoPersonId : null,
+        'coperson',
+        (int)$rows[0]['inviter_co_person_id'],
+        $action,
+        $comment,
+        Router::url(array(
+          'plugin'     => 'application_team_enroller',
+          'controller' => 'ate_invitations',
+          'action'     => 'view',
+          (int)$invitationId
+        ), true),
+        false
+      );
+
+      return array_map('intval', (array)$ids);
+    } catch(Exception $e) {
+      $this->log('ApplicationTeamEnroller could not notify the inviter of invitation ' . $invitationId . ': '
+                 . $e->getMessage(), LOG_ERROR);
+      return array();
+    }
+  }
+
+  /**
+   * The absolute URL of a request's decision page: the source of its decider
+   * notification (KTD12). Registering and resolving use this one string.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Integer $requestId AteEnrollmentRequest ID
+   * @return String             Absolute URL
+   */
+
+  public function decisionUrl($requestId) {
+    return Router::url(array(
+      'plugin'     => 'application_team_enroller',
+      'controller' => 'ate_enrollment_requests',
+      'action'     => 'view',
+      (int)$requestId
+    ), true);
+  }
+
+  /**
+   * The decision queue's entries for requests (R25): each with the
+   * researcher and their CoPerson status (KTD6), the invited address, the
+   * emails the login reported, the mismatch flag, the inviting admin, the
+   * application, the offered teams, and, for link_required, the person the
+   * login would be linked to. The caller chooses the requests (only those
+   * the user may decide).
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Integer $coId          CO ID
+   * @param  Array   $requestIds    AteEnrollmentRequest IDs
+   * @param  Array   $decidingRoles AteDecidedByRoleEnum values, keyed by request ID
+   * @return Array                  Entries, by ascending request ID. Each has 'id', 'application'
+   *                                ('id', 'name'), 'teams' (names), 'invited_email', 'identity_emails',
+   *                                'mismatch', 'pending_reason', 'inviter', 'researcher', 'link_target'
+   *                                (each null or 'co_person_id', 'name', 'status'),
+   *                                'responder_identifier', 'responder_name', 'responded_at',
+   *                                'deciding_role'
+   */
+
+  public function queueEntries($coId, $requestIds, $decidingRoles = array()) {
+    $requestIds = array_map('intval', (array)$requestIds);
+
+    if(empty($requestIds)) {
+      return array();
+    }
+
+    $args = array();
+    $args['conditions']['AteEnrollmentRequest.id'] = $requestIds;
+    $args['conditions']['AteInvitation.co_id'] = $coId;
+    $args['order'] = array('AteEnrollmentRequest.id' => 'asc');
+    $args['contain'] = array(
+      'AteApplication',
+      'AteEnrollmentRequestTeam' => array(
+        'order' => array('AteEnrollmentRequestTeam.id' => 'asc'),
+        'AteResearchTeam' => array('CoGroup')
+      ),
+      'AteInvitation' => array(
+        'InviterCoPerson' => array('PrimaryName'),
+        'InviteeCoPerson' => array('PrimaryName'),
+        'LinkTargetCoPerson' => array('PrimaryName')
+      )
+    );
+
+    $person = function($p) {
+      if(empty($p['id'])) {
+        return null;
+      }
+
+      return array(
+        'co_person_id' => (int)$p['id'],
+        'name'         => !empty($p['PrimaryName']) ? generateCn($p['PrimaryName']) : '',
+        'status'       => $p['status']
+      );
+    };
+
+    $ret = array();
+
+    foreach($this->find('all', $args) as $r) {
+      $req = $r['AteEnrollmentRequest'];
+      $inv = $r['AteInvitation'];
+      $teams = array();
+
+      foreach($r['AteEnrollmentRequestTeam'] as $t) {
+        $teams[] = !empty($t['AteResearchTeam']['name'])
+                   ? $t['AteResearchTeam']['name']
+                   : ($t['AteResearchTeam']['CoGroup']['name'] ?? '');
+      }
+
+      $emails = json_decode((string)$inv['identity_emails'], true);
+
+      $ret[] = array(
+        'id'                   => (int)$req['id'],
+        'application'          => array('id' => (int)$r['AteApplication']['id'],
+                                        'name' => $r['AteApplication']['name']),
+        'teams'                => $teams,
+        'invited_email'        => $inv['invited_email'],
+        'identity_emails'      => is_array($emails) ? $emails : array(),
+        'mismatch'             => self::truthy($inv['mismatch']),
+        'pending_reason'       => $req['pending_reason'],
+        'inviter'              => $person($inv['InviterCoPerson'] ?? array()),
+        'researcher'           => $person($inv['InviteeCoPerson'] ?? array()),
+        'link_target'          => ($req['pending_reason'] === AtePendingReasonEnum::LinkRequired)
+                                  ? $person($inv['LinkTargetCoPerson'] ?? array()) : null,
+        'responder_identifier' => $inv['responder_identifier'],
+        'responder_name'       => $inv['responder_name'],
+        'responded_at'         => $inv['responded_at'],
+        'deciding_role'        => $decidingRoles[(int)$req['id']] ?? null
+      );
+    }
+
+    return $ret;
+  }
+
+  /**
+   * Email the researcher and notify the inviting admin of a decided request
+   * (R36, R37). The researcher's email goes to the invited address, with text
+   * from Lib/lang.php and never the decider's comment. The inviting admin is
+   * not notified of a decision they made themselves.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Integer $coId            CO ID
+   * @param  Integer $requestId       AteEnrollmentRequest ID
+   * @param  Integer $actorCoPersonId Deciding CoPerson ID, or null (automatic)
+   * @return Array                    'researcher_emailed' and 'inviter_notifications'
+   */
+
+  protected function announceDecision($coId, $requestId, $actorCoPersonId) {
+    $ret = array('researcher_emailed' => false, 'inviter_notifications' => array());
+
+    try {
+      $d = $this->announcementDetails($coId, $requestId);
+    } catch(Exception $e) {
+      $this->log('ApplicationTeamEnroller could not read request ' . $requestId . ' to announce its decision: '
+                 . $e->getMessage(), LOG_ERROR);
+      return $ret;
+    }
+
+    if(!$d || !in_array($d['status'], array(AteRequestStatusEnum::Approved, AteRequestStatusEnum::Denied), true)) {
+      return $ret;
+    }
+
+    $ret['researcher_emailed'] = $this->sendDecisionEmail($d);
+
+    if($d['inviter_co_person_id'] && (int)$d['inviter_co_person_id'] !== (int)$actorCoPersonId) {
+      $ret['inviter_notifications'] = $this->notifyInviter(
+        $coId,
+        $d['ate_invitation_id'],
+        AteNotificationActionEnum::Decided,
+        _txt('pl.applicationteamenroller.notification.decided', array(
+          $d['application_name'],
+          $d['invited_email'],
+          _txt('pl.applicationteamenroller.en.request_status.' . $d['status'])
+        )),
+        $d['researcher_co_person_id'],
+        $actorCoPersonId
+      );
+    }
+
+    return $ret;
+  }
+
+  /**
+   * Email the researcher the decision on one application (R36, KTD13), at
+   * the invited address. The text never includes the decider's comment. A
+   * send failure is logged, never thrown: the decision stands.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Array   $d announcementDetails() row
+   * @return Boolean    True if the email was sent
+   */
+
+  protected function sendDecisionEmail($d) {
+    $approved = ($d['status'] === AteRequestStatusEnum::Approved);
+    $key = $approved ? 'approved' : 'denied';
+
+    $teams = array();
+
+    foreach($this->sqlRows(
+      'SELECT rt.name AS team_name, g.name AS group_name, ert.outcome AS outcome'
+      . ' FROM ' . $this->tablePrefix . 'ate_enrollment_request_teams ert'
+      . ' LEFT JOIN ' . $this->tablePrefix . 'ate_research_teams rt ON rt.id = ert.ate_research_team_id'
+      . ' LEFT JOIN ' . $this->tablePrefix . 'co_groups g ON g.id = rt.co_group_id'
+      . ' WHERE ert.ate_enrollment_request_id = ? ORDER BY ert.id',
+      array((int)$d['id'])
+    ) as $t) {
+      // A skipped team was not granted (R29), so it is not announced
+      if($approved && $t['outcome'] !== AteTeamOutcomeEnum::Skipped) {
+        $teams[] = ($t['team_name'] !== null && $t['team_name'] !== '') ? $t['team_name'] : $t['group_name'];
+      }
+    }
+
+    $args = array($d['application_name'], $d['co_name'], implode(', ', $teams));
+
+    try {
+      $email = new CakeEmail($this->emailConfig);
+
+      $email->emailFormat(MessageFormatEnum::Plaintext)
+            ->to($d['invited_email'])
+            ->subject(_txt('pl.applicationteamenroller.decision.email.subject.' . $key, $args));
+
+      $email->send(_txt('pl.applicationteamenroller.decision.email.body.' . $key, $args));
+    } catch(Exception $e) {
+      $this->log('ApplicationTeamEnroller could not email the decision on request ' . $d['id'] . ' to '
+                 . $d['invited_email'] . ': ' . $e->getMessage(), LOG_ERROR);
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Who is notified of a pending request (see notifyPending()).
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Integer $coId CO ID
+   * @param  Array   $d    announcementDetails() row
+   * @return Array         Recipient type ('coperson' or 'cogroup') and ID, or null
+   */
+
+  protected function deciderRecipient($coId, $d) {
+    switch($d['pending_reason']) {
+      case AtePendingReasonEnum::Approval:
+        return $d['approver_co_group_id'] ? array('cogroup', (int)$d['approver_co_group_id']) : null;
+      case AtePendingReasonEnum::Mismatch:
+        $inviter = (int)$d['inviter_co_person_id'];
+        $CoGroupMember = ClassRegistry::init('CoGroupMember');
+
+        if($inviter) {
+          $holds = $d['admin_co_group_id'] && $CoGroupMember->isMember($d['admin_co_group_id'], $inviter);
+
+          if(!$holds) {
+            try {
+              $holds = $CoGroupMember->isMember(ClassRegistry::init('CoGroup')->adminCoGroupId($coId), $inviter);
+            } catch(InvalidArgumentException $e) {
+              $holds = false;
+            }
+          }
+
+          if($holds) {
+            return array('coperson', $inviter);
+          }
+        }
+
+        return $d['admin_co_group_id'] ? array('cogroup', (int)$d['admin_co_group_id']) : null;
+      default:
+        // link_required, or an unknown reason: CO administrators only (R39)
+        try {
+          return array('cogroup', (int)ClassRegistry::init('CoGroup')->adminCoGroupId($coId));
+        } catch(InvalidArgumentException $e) {
+          return null;
+        }
+    }
+  }
+
+  /**
+   * What the announcement hooks need about a request of the CO.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Integer $coId      CO ID
+   * @param  Integer $requestId AteEnrollmentRequest ID
+   * @return Array              Flat row with 'researcher_co_person_id' added, or null
+   */
+
+  protected function announcementDetails($coId, $requestId) {
+    $p = $this->tablePrefix;
+
+    $rows = $this->sqlRows(
+      'SELECT r.id AS id, r.ate_invitation_id AS ate_invitation_id, r.status AS status,'
+      . ' r.pending_reason AS pending_reason,'
+      . ' i.invited_email AS invited_email, i.inviter_co_person_id AS inviter_co_person_id,'
+      . ' i.invitee_co_person_id AS invitee_co_person_id,'
+      . ' i.link_target_co_person_id AS link_target_co_person_id,'
+      . ' a.name AS application_name, a.admin_co_group_id AS admin_co_group_id,'
+      . ' a.approver_co_group_id AS approver_co_group_id, c.name AS co_name'
+      . ' FROM ' . $p . 'ate_enrollment_requests r'
+      . ' JOIN ' . $p . 'ate_invitations i ON i.id = r.ate_invitation_id'
+      . ' JOIN ' . $p . 'ate_applications a ON a.id = r.ate_application_id'
+      . ' JOIN ' . $p . 'cos c ON c.id = i.co_id'
+      . ' WHERE r.id = ? AND i.co_id = ?',
+      array((int)$requestId, (int)$coId)
+    );
+
+    if(empty($rows)) {
+      return null;
+    }
+
+    $d = $rows[0];
+    $researcher = ($d['pending_reason'] === AtePendingReasonEnum::LinkRequired)
+                  ? $d['link_target_co_person_id']
+                  : $d['invitee_co_person_id'];
+    $d['researcher_co_person_id'] = $researcher ? (int)$researcher : null;
+
+    return $d;
+  }
+
+  /**
+   * How many open (pending resolution) notifications have a source URL.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  String  $url Source URL
+   * @return Integer
+   */
+
+  protected function openNotificationCount($url) {
+    $rows = $this->sqlRows('SELECT count(*) AS n FROM ' . $this->tablePrefix . 'co_notifications'
+                           . ' WHERE source_url = ? AND status = ?',
+                           array((string)$url, NotificationStatusEnum::PendingResolution));
+
+    return (int)$rows[0]['n'];
   }
 
   /**

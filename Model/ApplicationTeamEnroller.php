@@ -85,6 +85,12 @@ class ApplicationTeamEnroller extends AppModel {
         _txt('pl.applicationteamenroller.menu.invitations') =>
           array('icon'       => 'mail',
                 'controller' => 'ate_invitations',
+                'action'     => 'index'),
+        // Deciders (A3), inviting admins deciding mismatches (A2), and CO
+        // administrators (A4). AteEnrollmentRequestsController checks access.
+        _txt('pl.applicationteamenroller.menu.queue') =>
+          array('icon'       => 'fact_check',
+                'controller' => 'ate_enrollment_requests',
                 'action'     => 'index')
       )
     );

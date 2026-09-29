@@ -58,8 +58,8 @@ class HarnessSelfTest extends AteTestCase {
   /**
    * No jobs yet (U11 adds expiry). U4: the CO configuration page links the
    * applications, research teams, and settings screens, and only those. U6:
-   * the CO main menu links composing an invitation and the invitation list,
-   * and only those.
+   * the CO main menu links composing an invitation and the invitation list;
+   * U10 adds the decision queue; and only those.
    */
   public function testPluginDeclaresNoJobsYetAndItsMenus() {
     $model = $this->model('ApplicationTeamEnroller.ApplicationTeamEnroller');
@@ -73,7 +73,7 @@ class HarnessSelfTest extends AteTestCase {
 
     $expected = array(
       'coconfig' => array('ate_applications/index', 'ate_research_teams/index', 'ate_settings/index'),
-      'comain' => array('ate_invitations/add', 'ate_invitations/index')
+      'comain' => array('ate_enrollment_requests/index', 'ate_invitations/add', 'ate_invitations/index')
     );
 
     foreach($expected as $location => $want) {

@@ -405,7 +405,9 @@ class AteFixtures {
    * plugin creates an access group for every application (KTD10) and
    * Registry derives memberships and history from its nestings. It removes
    * the CO's OrgIdentities and their identifiers, email addresses, and links
-   * too, because approving a request can link a login (U7).
+   * too, because approving a request can link a login (U7), and the
+   * notifications about the COs' people and groups, because a pending
+   * request notifies its deciders (U10).
    *
    * Pass every CO a test seeded in one call. The map is keyed by table, so
    * array_merge() of two maps keeps only the second CO's clauses.
@@ -423,6 +425,10 @@ class AteFixtures {
     $oid = 'SELECT id FROM cm_org_identities WHERE co_id IN (' . $cos . ')';
 
     return array(
+      'cm_co_notifications' => 'subject_co_person_id IN (' . $ppl . ') OR actor_co_person_id IN (' . $ppl . ')'
+                               . ' OR recipient_co_person_id IN (' . $ppl . ')'
+                               . ' OR resolver_co_person_id IN (' . $ppl . ')'
+                               . ' OR subject_co_group_id IN (' . $grp . ') OR recipient_co_group_id IN (' . $grp . ')',
       'cm_ate_enrollment_request_teams' => 'ate_enrollment_request_id IN (' . $req . ')',
       'cm_ate_enrollment_requests' => 'ate_invitation_id IN (' . $inv . ')',
       'cm_ate_invitations' => 'co_id IN (' . $cos . ')',
