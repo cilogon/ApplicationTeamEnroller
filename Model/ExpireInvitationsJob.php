@@ -203,10 +203,11 @@ class ExpireInvitationsJob extends CoJobBackend {
   protected function unfinishedExpiredPetitions($coId) {
     return $this->sqlRows('SELECT i.id, i.co_petition_id FROM ' . $this->table('ate_invitations') . ' i'
                           . ' JOIN ' . $this->table('co_petitions') . ' p ON p.id = i.co_petition_id'
-                          . ' WHERE i.co_id = ? AND i.status = ? AND p.status NOT IN (?, ?, ?, ?) ORDER BY i.id',
-                          array((int)$coId, AteInvitationStatusEnum::Expired,
-                                PetitionStatusEnum::Declined, PetitionStatusEnum::Denied,
-                                PetitionStatusEnum::Duplicate, PetitionStatusEnum::Finalized));
+                          . ' WHERE i.co_id = ? AND i.status = ? AND p.status NOT IN ('
+                          . implode(', ', array_fill(0, count(AteInvitation::PetitionFinishedStatuses), '?'))
+                          . ') ORDER BY i.id',
+                          array_merge(array((int)$coId, AteInvitationStatusEnum::Expired),
+                                      AteInvitation::PetitionFinishedStatuses));
   }
 
   /**

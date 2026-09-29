@@ -37,6 +37,7 @@
 
 App::uses('CoPetitionsController', 'Controller');
 App::uses('AteResponsesController', 'ApplicationTeamEnroller.Controller');
+App::uses('AteInvitation', 'ApplicationTeamEnroller.Model');
 
 class ApplicationTeamEnrollerCoPetitionsController extends CoPetitionsController {
   // Class name, used by Cake
@@ -139,17 +140,16 @@ class ApplicationTeamEnrollerCoPetitionsController extends CoPetitionsController
       $binding = $this->Session->read(AteResponsesController::SessionNewcomer);
       $username = $this->Session->read('Auth.User.username');
 
-      if(empty($inv['AteInvitation']['id'])) {
-        // Not bound: the plugin steps were skipped (KTD18), or this petition
-        // was retired in favor of a later one
-        $reason = 'newcomer_session';
-      } elseif(!$this->sameLogin($binding, $username)
-               || (int)$binding['invitation_id'] !== (int)$inv['AteInvitation']['id']
-               || (int)$binding['co_id'] !== $coId) {
+      // Not bound (the plugin steps were skipped, KTD18, or this petition
+      // was retired in favor of a later one), or bound to another session
+      if(empty($inv['AteInvitation']['id'])
+         || !$this->sameLogin($binding, $username)
+         || (int)$binding['invitation_id'] !== (int)$inv['AteInvitation']['id']
+         || (int)$binding['co_id'] !== $coId) {
         $reason = 'newcomer_session';
       } elseif($inv['AteInvitation']['status'] !== AteInvitationStatusEnum::Sent) {
         // No lapse check: a petition bound while live is honored (KTD14)
-        $reason = $this->statusReason($inv['AteInvitation']['status']);
+        $reason = AteInvitation::reasonForStatus($inv['AteInvitation']['status']);
       } elseif($pt['CoPetition']['status'] !== PetitionStatusEnum::Finalized
                || empty($pt['CoPetition']['enrollee_co_person_id'])) {
         $reason = 'newcomer_incomplete';
@@ -328,28 +328,7 @@ class ApplicationTeamEnrollerCoPetitionsController extends CoPetitionsController
       return 'expired';
     }
 
-    return $this->statusReason($status);
-  }
-
-  /**
-   * The explanation reason for an invitation status.
-   *
-   * @since  COmanage Registry v4.6.0
-   * @param  String $status AteInvitationStatusEnum value
-   * @return String         Explanation reason, or null for sent
-   */
-
-  protected function statusReason($status) {
-    switch($status) {
-      case AteInvitationStatusEnum::Sent:
-        return null;
-      case AteInvitationStatusEnum::Responded:
-        return 'answered';
-      case AteInvitationStatusEnum::Revoked:
-        return 'revoked';
-      default:
-        return 'expired';
-    }
+    return AteInvitation::reasonForStatus($status);
   }
 
   /**

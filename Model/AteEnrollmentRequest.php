@@ -469,21 +469,7 @@ class AteEnrollmentRequest extends ApplicationTeamEnrollerAppModel {
       }
     }
 
-    $accept = array();
-
-    foreach((array)$choices as $reqId => $choice) {
-      $b = filter_var($choice, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
-
-      if(!isset($offered[(int)$reqId]) || $b === null) {
-        throw new InvalidArgumentException(_txt('pl.applicationteamenroller.er.response.choices'));
-      }
-
-      $accept[(int)$reqId] = $b;
-    }
-
-    if(empty($offered) || count($accept) !== count($offered)) {
-      throw new InvalidArgumentException(_txt('pl.applicationteamenroller.er.response.choices'));
-    }
+    $accept = $this->normalizeChoices($choices, $offered);
 
     // The responder: the caller's CoPerson must agree with the login's (KTD6)
     $loginPerson = $this->existingMemberCoPersonId($coId, $snap['identifier']);
@@ -632,21 +618,7 @@ class AteEnrollmentRequest extends ApplicationTeamEnrollerAppModel {
         $offered[(int)$r['id']] = true;
       }
 
-      $draft = array();
-
-      foreach((array)$choices as $reqId => $choice) {
-        $b = filter_var($choice, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
-
-        if(!isset($offered[(int)$reqId]) || $b === null) {
-          throw new InvalidArgumentException(_txt('pl.applicationteamenroller.er.response.choices'));
-        }
-
-        $draft[(int)$reqId] = $b;
-      }
-
-      if(empty($offered) || count($draft) !== count($offered)) {
-        throw new InvalidArgumentException(_txt('pl.applicationteamenroller.er.response.choices'));
-      }
+      $draft = $this->normalizeChoices($choices, $offered);
 
       foreach($draft as $reqId => $b) {
         if(!$this->conditionalUpdate($this, array('draft_choice' => $b, 'modified' => $now), array(
@@ -1143,9 +1115,8 @@ class AteEnrollmentRequest extends ApplicationTeamEnrollerAppModel {
       $teams = array();
 
       foreach($r['AteEnrollmentRequestTeam'] as $t) {
-        $teams[] = !empty($t['AteResearchTeam']['name'])
-                   ? $t['AteResearchTeam']['name']
-                   : ($t['AteResearchTeam']['CoGroup']['name'] ?? '');
+        $teams[] = self::teamLabel($t['AteResearchTeam']['name'] ?? null,
+                                   $t['AteResearchTeam']['CoGroup']['name'] ?? '');
       }
 
       $emails = json_decode((string)$inv['identity_emails'], true);
@@ -1347,9 +1318,8 @@ class AteEnrollmentRequest extends ApplicationTeamEnrollerAppModel {
     }
 
     $d = $rows[0];
-    $researcher = ($d['pending_reason'] === AtePendingReasonEnum::LinkRequired)
-                  ? $d['link_target_co_person_id']
-                  : $d['invitee_co_person_id'];
+    $researcher = self::researcherCoPersonId($d['pending_reason'], $d['invitee_co_person_id'],
+                                             $d['link_target_co_person_id']);
     $d['researcher_co_person_id'] = $researcher ? (int)$researcher : null;
 
     return $d;
@@ -1564,7 +1534,8 @@ class AteEnrollmentRequest extends ApplicationTeamEnrollerAppModel {
     }
 
     $linkRequired = ($req['pending_reason'] === AtePendingReasonEnum::LinkRequired);
-    $researcher = $linkRequired ? $req['link_target_co_person_id'] : $req['invitee_co_person_id'];
+    $researcher = self::researcherCoPersonId($req['pending_reason'], $req['invitee_co_person_id'],
+                                             $req['link_target_co_person_id']);
 
     if(empty($researcher)) {
       throw new RuntimeException(_txt($linkRequired ? 'pl.applicationteamenroller.er.approve.target'
@@ -1848,9 +1819,8 @@ class AteEnrollmentRequest extends ApplicationTeamEnrollerAppModel {
       return $ret;
     }
 
-    $researcher = ($req['pending_reason'] === AtePendingReasonEnum::LinkRequired)
-                  ? $req['link_target_co_person_id']
-                  : $req['invitee_co_person_id'];
+    $researcher = self::researcherCoPersonId($req['pending_reason'], $req['invitee_co_person_id'],
+                                             $req['link_target_co_person_id']);
 
     return array(
       'invitation_id'   => (int)$req['ate_invitation_id'],
@@ -2139,42 +2109,6 @@ class AteEnrollmentRequest extends ApplicationTeamEnrollerAppModel {
   }
 
   /**
-   * One conditional UPDATE (KTD8): set $fields on the rows of $Model that
-   * match $conditions, which must name only $Model's own columns so Cake
-   * issues a single UPDATE rather than a SELECT first.
-   *
-   * @since  COmanage Registry v4.6.0
-   * @param  Model   $Model      Model to update
-   * @param  Array   $fields     Column => PHP value (null, Boolean, Integer, or String)
-   * @param  Array   $conditions Column => value
-   * @return Boolean             True if exactly one row changed
-   * @throws RuntimeException If the update fails
-   */
-
-  protected function conditionalUpdate($Model, $fields, $conditions) {
-    $dbc = $Model->getDataSource();
-    $set = array();
-
-    foreach($fields as $col => $v) {
-      if($v === null) {
-        $set[$col] = 'NULL';
-      } elseif(is_bool($v)) {
-        $set[$col] = $dbc->value($v, 'boolean');
-      } elseif(is_int($v)) {
-        $set[$col] = $v;
-      } else {
-        $set[$col] = $dbc->value((string)$v);
-      }
-    }
-
-    if(!$Model->updateAll($set, $conditions)) {
-      throw new RuntimeException(_txt('er.db.save-a', array($Model->alias)));
-    }
-
-    return $Model->getAffectedRows() === 1;
-  }
-
-  /**
    * Commit, first checking that the transaction is still open: if code
    * below rolled it back, writes since then were not transactional, and the
    * caller must hear about it.
@@ -2193,6 +2127,52 @@ class AteEnrollmentRequest extends ApplicationTeamEnrollerAppModel {
   }
 
   /**
+   * Check a responder's choices against the offered requests: one boolean
+   * choice per offered request, no more (R19, R21).
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Array $choices True (accept) or false (decline), keyed by AteEnrollmentRequest ID
+   * @param  Array $offered Offered requests, keyed by AteEnrollmentRequest ID
+   * @return Array          Boolean choices, keyed by AteEnrollmentRequest ID
+   * @throws InvalidArgumentException If the choices are not one boolean per offered request
+   */
+
+  protected function normalizeChoices($choices, $offered) {
+    $ret = array();
+
+    foreach((array)$choices as $reqId => $choice) {
+      $b = filter_var($choice, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+
+      if(!isset($offered[(int)$reqId]) || $b === null) {
+        throw new InvalidArgumentException(_txt('pl.applicationteamenroller.er.response.choices'));
+      }
+
+      $ret[(int)$reqId] = $b;
+    }
+
+    if(empty($offered) || count($ret) !== count($offered)) {
+      throw new InvalidArgumentException(_txt('pl.applicationteamenroller.er.response.choices'));
+    }
+
+    return $ret;
+  }
+
+  /**
+   * The researcher's CoPerson for a request: the link target of a
+   * link_required request, otherwise the invitee (R7, KTD17).
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  String $pendingReason    AtePendingReasonEnum value, or null
+   * @param  Mixed  $inviteeId        Invitation's invitee_co_person_id
+   * @param  Mixed  $linkTargetId     Invitation's link_target_co_person_id
+   * @return Mixed                    One of the two IDs, as given
+   */
+
+  protected static function researcherCoPersonId($pendingReason, $inviteeId, $linkTargetId) {
+    return ($pendingReason === AtePendingReasonEnum::LinkRequired) ? $linkTargetId : $inviteeId;
+  }
+
+  /**
    * A decision comment for storage: trimmed, or null if empty.
    *
    * @since  COmanage Registry v4.6.0
@@ -2204,38 +2184,6 @@ class AteEnrollmentRequest extends ApplicationTeamEnrollerAppModel {
     $comment = is_string($comment) ? trim($comment) : '';
 
     return ($comment === '') ? null : $comment;
-  }
-
-  /**
-   * Run a parameterized SELECT without the query cache and return flat rows.
-   *
-   * @since  COmanage Registry v4.6.0
-   * @param  String $sql    SQL with ? placeholders
-   * @param  Array  $params Parameters
-   * @return Array          Rows as column => value
-   * @throws RuntimeException If the query fails
-   */
-
-  protected function sqlRows($sql, $params) {
-    $result = $this->getDataSource()->fetchAll($sql, $params, array('cache' => false));
-
-    if($result === false) {
-      throw new RuntimeException(_txt('pl.applicationteamenroller.er.query'));
-    }
-
-    $rows = array();
-
-    foreach((array)$result as $row) {
-      $flat = array();
-
-      foreach($row as $part) {
-        $flat = array_merge($flat, (array)$part);
-      }
-
-      $rows[] = $flat;
-    }
-
-    return $rows;
   }
 
   /**

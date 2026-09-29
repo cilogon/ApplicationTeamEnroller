@@ -94,11 +94,7 @@ class AteEnrollmentRequestsController extends StandardController {
     $coId = $this->cur_co['Co']['id'];
     $roles = $this->Role->calculateCMRoles();
 
-    $decidingRoles = array();
-
-    foreach($this->AteAuthz->decidableRequestIds($roles, $coId) as $reqId) {
-      $decidingRoles[$reqId] = $this->AteAuthz->decidingRole($roles, $coId, $reqId);
-    }
+    $decidingRoles = $this->AteAuthz->decidableRequestRoles($roles, $coId);
 
     $this->set('title_for_layout', _txt('pl.applicationteamenroller.queue'));
     $this->set('vv_requests', $this->AteEnrollmentRequest->queueEntries($coId, array_keys($decidingRoles),

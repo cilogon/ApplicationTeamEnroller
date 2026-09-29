@@ -73,16 +73,7 @@ class AteAuthzComponent extends Component {
       return array();
     }
 
-    $ids = array();
-
-    foreach($this->applications($coId, true) as $app) {
-      if($this->isAdmin($roles)
-         || $this->isMember($this->actor($roles), $app['admin_co_group_id'])) {
-        $ids[] = (int)$app['id'];
-      }
-    }
-
-    return $ids;
+    return $this->administrableIds($roles, $coId, true);
   }
 
   /**
@@ -96,16 +87,7 @@ class AteAuthzComponent extends Component {
    */
 
   public function administeredApplicationIds($roles, $coId) {
-    $ids = array();
-
-    foreach($this->applications($coId, false) as $app) {
-      if($this->isAdmin($roles)
-         || $this->isMember($this->actor($roles), $app['admin_co_group_id'])) {
-        $ids[] = (int)$app['id'];
-      }
-    }
-
-    return $ids;
+    return $this->administrableIds($roles, $coId, false);
   }
 
   /**
@@ -275,6 +257,20 @@ class AteAuthzComponent extends Component {
    */
 
   public function decidableRequestIds($roles, $coId) {
+    return array_keys($this->decidableRequestRoles($roles, $coId));
+  }
+
+  /**
+   * The pending requests of the CO the user may decide, with the role under
+   * which they may decide each (see decidableRequestIds() and decidingRole()).
+   * The decision queue uses it to avoid reloading each request.
+   *
+   * @param  Array   $roles Roles from RoleComponent::calculateCMRoles()
+   * @param  Integer $coId  Current CO ID
+   * @return Array          AteDecidedByRoleEnum values, keyed by AteEnrollmentRequest ID, ascending
+   */
+
+  public function decidableRequestRoles($roles, $coId) {
     if(!$this->actor($roles)) {
       return array();
     }
@@ -287,15 +283,17 @@ class AteAuthzComponent extends Component {
     $args['order'] = array('AteEnrollmentRequest.id' => 'asc');
     $args['contain'] = array('AteInvitation', 'AteApplication');
 
-    $ids = array();
+    $decidingRoles = array();
 
     foreach($Request->find('all', $args) as $req) {
-      if($this->decidingRoleFor($roles, $coId, $req) !== null) {
-        $ids[] = (int)$req['AteEnrollmentRequest']['id'];
+      $role = $this->decidingRoleFor($roles, $coId, $req);
+
+      if($role !== null) {
+        $decidingRoles[(int)$req['AteEnrollmentRequest']['id']] = $role;
       }
     }
 
-    return $ids;
+    return $decidingRoles;
   }
 
   /**
@@ -457,6 +455,29 @@ class AteAuthzComponent extends Component {
     }
 
     return (bool)$this->Role->isCoGroupMember($coPersonId, $coGroupId);
+  }
+
+  /**
+   * The applications of a CO whose admin group the user belongs to, or all
+   * of them for a CO administrator.
+   *
+   * @param  Array   $roles      Roles from RoleComponent::calculateCMRoles()
+   * @param  Integer $coId       CO ID
+   * @param  Boolean $activeOnly Only active (not retired) applications
+   * @return Array               AteApplication IDs, ascending
+   */
+
+  private function administrableIds($roles, $coId, $activeOnly) {
+    $ids = array();
+
+    foreach($this->applications($coId, $activeOnly) as $app) {
+      if($this->isAdmin($roles)
+         || $this->isMember($this->actor($roles), $app['admin_co_group_id'])) {
+        $ids[] = (int)$app['id'];
+      }
+    }
+
+    return $ids;
   }
 
   /**

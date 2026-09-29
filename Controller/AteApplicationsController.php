@@ -74,7 +74,11 @@ class AteApplicationsController extends StandardController {
     if(!$this->request->is('restful') && !empty($this->cur_co['Co']['id'])) {
       $coId = $this->cur_co['Co']['id'];
 
-      $this->set('vv_available_groups', $this->AteApplication->availableGroups($coId));
+      // Only the add, edit, and view forms (fields.inc) show groups
+      if(in_array($this->action, array('add', 'edit', 'view'), true)) {
+        $this->set('vv_available_groups', $this->AteApplication->availableGroups($coId));
+      }
+
       $this->set('vv_status_types', array(
         AteConfigStatusEnum::Active  => _txt('pl.applicationteamenroller.en.status.active'),
         AteConfigStatusEnum::Retired => _txt('pl.applicationteamenroller.en.status.retired')

@@ -135,17 +135,15 @@ class AteApplicationTeam extends ApplicationTeamEnrollerAppModel {
     $args = array();
     $args['conditions']['AteResearchTeam.status'] = AteConfigStatusEnum::Active;
     $args['conditions']['CoGroup.co_id'] = $coId;
-    $args['conditions']['CoGroup.co_group_id'] = null;
-    $args['conditions'][] = 'CoGroup.deleted IS NOT true';
+    $args['conditions'][] = self::currentRowConditions('CoGroup', 'co_group_id');
     $args['order'] = 'AteResearchTeam.name ASC';
     $args['contain'] = array('CoGroup');
 
     $ret = array();
 
     foreach($this->AteResearchTeam->find('all', $args) as $t) {
-      $ret[ (int)$t['AteResearchTeam']['id'] ] = !empty($t['AteResearchTeam']['name'])
-                                                 ? $t['AteResearchTeam']['name']
-                                                 : $t['CoGroup']['name'];
+      $ret[ (int)$t['AteResearchTeam']['id'] ] = self::teamLabel($t['AteResearchTeam']['name'],
+                                                                 $t['CoGroup']['name']);
     }
 
     return $ret;

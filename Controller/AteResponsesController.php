@@ -143,9 +143,10 @@ class AteResponsesController extends ApplicationTeamEnrollerAppController {
     $p['landing'] = true;
 
     // Respond to the invitation in the session, and see the result?
-    $p['respond'] = $this->AteAuthz->mayRespond();
-    $p['confirmation'] = $this->AteAuthz->mayRespond();
-    $p['explanation'] = $this->AteAuthz->mayRespond();
+    $mayRespond = $this->AteAuthz->mayRespond();
+    $p['respond'] = $mayRespond;
+    $p['confirmation'] = $mayRespond;
+    $p['explanation'] = $mayRespond;
 
     $this->set('permissions', $p);
 
@@ -379,7 +380,7 @@ class AteResponsesController extends ApplicationTeamEnrollerAppController {
 
     if(empty($result['handled'])) {
       // Another submit, a revocation, or expiry got there first (KTD8)
-      $this->explain($this->invitationProblem($this->AteInvitation->findByTokenHash($inv['token_hash'])) ?: 'answered');
+      $this->explainAlreadyHandled($inv);
       return;
     }
 
@@ -433,7 +434,7 @@ class AteResponsesController extends ApplicationTeamEnrollerAppController {
 
   protected function continueAsNewcomer($coId, $inv, $snapshot, $choices) {
     if(!$this->AteEnrollmentRequest->saveDraft($coId, $inv['id'], $choices)) {
-      $this->explain($this->invitationProblem($this->AteInvitation->findByTokenHash($inv['token_hash'])) ?: 'answered');
+      $this->explainAlreadyHandled($inv);
       return;
     }
 
@@ -603,16 +604,20 @@ class AteResponsesController extends ApplicationTeamEnrollerAppController {
       return 'expired';
     }
 
-    switch($inv['status']) {
-      case AteInvitationStatusEnum::Sent:
-        return null;
-      case AteInvitationStatusEnum::Responded:
-        return 'answered';
-      case AteInvitationStatusEnum::Revoked:
-        return 'revoked';
-      default:
-        return 'expired';
-    }
+    return AteInvitation::reasonForStatus($inv['status']);
+  }
+
+  /**
+   * Show the explanation page for an invitation that another submit, a
+   * revocation, or expiry has already moved on (KTD8), reading its current
+   * status.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Array $inv Invitation, as validated before the write
+   */
+
+  protected function explainAlreadyHandled($inv) {
+    $this->explain($this->invitationProblem($this->AteInvitation->findByTokenHash($inv['token_hash'])) ?: 'answered');
   }
 
   /**

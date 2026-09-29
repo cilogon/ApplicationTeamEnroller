@@ -53,7 +53,11 @@ class AteResearchTeamsController extends StandardController {
     parent::beforeRender();
 
     if(!$this->request->is('restful') && !empty($this->cur_co['Co']['id'])) {
-      $this->set('vv_available_groups', $this->AteResearchTeam->availableGroups($this->cur_co['Co']['id']));
+      // Only the add, edit, and view forms (fields.inc) show groups
+      if(in_array($this->action, array('add', 'edit', 'view'), true)) {
+        $this->set('vv_available_groups', $this->AteResearchTeam->availableGroups($this->cur_co['Co']['id']));
+      }
+
       $this->set('vv_status_types', array(
         AteConfigStatusEnum::Active  => _txt('pl.applicationteamenroller.en.status.active'),
         AteConfigStatusEnum::Retired => _txt('pl.applicationteamenroller.en.status.retired')

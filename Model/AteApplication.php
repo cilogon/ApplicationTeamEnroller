@@ -379,8 +379,7 @@ class AteApplication extends ApplicationTeamEnrollerAppModel {
     // archived groups here.
     $args = array();
     $args['conditions']['AccessCoGroup.id'] = $accessId;
-    $args['conditions']['AccessCoGroup.co_group_id'] = null;
-    $args['conditions'][] = 'AccessCoGroup.deleted IS NOT true';
+    $args['conditions'][] = self::currentRowConditions('AccessCoGroup', 'co_group_id');
     $args['contain'] = false;
 
     return ($this->AccessCoGroup->find('count', $args) > 0) ? (int)$accessId : null;
@@ -416,8 +415,7 @@ class AteApplication extends ApplicationTeamEnrollerAppModel {
 
     $args = array();
     $args['conditions']['AteResearchTeam.id'] = $teamIds;
-    $args['conditions']['AteResearchTeam.ate_research_team_id'] = null;
-    $args['conditions'][] = 'AteResearchTeam.deleted IS NOT true';
+    $args['conditions'][] = self::currentRowConditions('AteResearchTeam', 'ate_research_team_id');
     $args['fields'] = array('AteResearchTeam.id', 'AteResearchTeam.co_group_id');
     $args['contain'] = false;
 
@@ -429,8 +427,7 @@ class AteApplication extends ApplicationTeamEnrollerAppModel {
 
     $args = array();
     $args['conditions']['CoGroup.id'] = $groupIds;
-    $args['conditions']['CoGroup.co_group_id'] = null;
-    $args['conditions'][] = 'CoGroup.deleted IS NOT true';
+    $args['conditions'][] = self::currentRowConditions('CoGroup', 'co_group_id');
     $args['fields'] = array('CoGroup.id', 'CoGroup.id');
     $args['order'] = array('CoGroup.id' => 'asc');
     $args['contain'] = false;
@@ -464,23 +461,14 @@ class AteApplication extends ApplicationTeamEnrollerAppModel {
    */
 
   public function validateCoGroup($check) {
-    $coId = isset($this->data[$this->alias]['co_id']) ? $this->data[$this->alias]['co_id'] : null;
-
-    if(empty($coId)) {
-      $id = !empty($this->data[$this->alias]['id']) ? $this->data[$this->alias]['id'] : $this->id;
-
-      if(!empty($id)) {
-        $coId = $this->field('co_id', array($this->alias . '.id' => $id));
-      }
-    }
+    $coId = $this->validationCoId();
 
     // Changelog does not filter a lookup by id, so exclude deleted and
     // archived groups here.
     $args = array();
     $args['conditions']['AdminCoGroup.id'] = reset($check);
     $args['conditions']['AdminCoGroup.co_id'] = $coId;
-    $args['conditions']['AdminCoGroup.co_group_id'] = null;
-    $args['conditions'][] = 'AdminCoGroup.deleted IS NOT true';
+    $args['conditions'][] = self::currentRowConditions('AdminCoGroup', 'co_group_id');
     $args['contain'] = false;
 
     if(empty($coId) || $this->AdminCoGroup->find('count', $args) < 1) {

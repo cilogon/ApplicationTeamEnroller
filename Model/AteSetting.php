@@ -116,8 +116,9 @@ class AteSetting extends ApplicationTeamEnrollerAppModel {
    * Obtain the settings row for a CO, creating it with persisted defaults if
    * the CO has none.
    *
-   * The CO row is locked while checking, so two first visits cannot both
-   * create a row.
+   * An existing row is returned without locking. Otherwise the CO row is
+   * locked while checking again, so two first visits cannot both create a
+   * row.
    *
    * @since  COmanage Registry v4.6.0
    * @param  Integer $coId CO ID
@@ -126,6 +127,12 @@ class AteSetting extends ApplicationTeamEnrollerAppModel {
    */
 
   public function getOrCreateForCo($coId) {
+    $row = $this->findForCo($coId);
+
+    if(!empty($row['AteSetting']['id'])) {
+      return $row;
+    }
+
     $dbc = $this->getDataSource();
     $dbc->begin();
 
@@ -288,15 +295,7 @@ class AteSetting extends ApplicationTeamEnrollerAppModel {
    */
 
   public function validateNewcomerFlow($check) {
-    $coId = isset($this->data[$this->alias]['co_id']) ? $this->data[$this->alias]['co_id'] : null;
-
-    if(empty($coId)) {
-      $id = !empty($this->data[$this->alias]['id']) ? $this->data[$this->alias]['id'] : $this->id;
-
-      if(!empty($id)) {
-        $coId = $this->field('co_id', array($this->alias . '.id' => $id));
-      }
-    }
+    $coId = $this->validationCoId();
 
     $problem = $this->newcomerFlowProblem($coId, reset($check));
 

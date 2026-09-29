@@ -92,7 +92,7 @@ class AteInvitation extends ApplicationTeamEnrollerAppModel {
       'allowEmpty' => false
     ),
     'token_hash' => array(
-      'rule' => array('custom', '/^[0-9a-f]{64}$/'),
+      'rule' => array('custom', self::TokenHashPattern),
       'required' => true,
       'allowEmpty' => false
     ),
@@ -161,6 +161,21 @@ class AteInvitation extends ApplicationTeamEnrollerAppModel {
   // How long past its expiry an invitation with a bound newcomer petition
   // stays live (KTD14)
   const PetitionGraceSeconds = 86400;
+
+  // Seconds in a day, for the invitation lifetime in days
+  const SecondsPerDay = 86400;
+
+  // A link token, and its stored SHA-256 hash: 64 lowercase hex digits (KTD4)
+  const TokenHashPattern = '/^[0-9a-f]{64}$/';
+
+  // Petition statuses after which a petition has finished and is not
+  // retired or reported as unfinished
+  const PetitionFinishedStatuses = array(
+    PetitionStatusEnum::Declined,
+    PetitionStatusEnum::Denied,
+    PetitionStatusEnum::Duplicate,
+    PetitionStatusEnum::Finalized
+  );
 
   /**
    * Create an invitation and email its link, in one transaction (F1, R10,
@@ -241,7 +256,7 @@ class AteInvitation extends ApplicationTeamEnrollerAppModel {
 
       $token = self::generateToken();
       $expires = date('Y-m-d H:i:s',
-                      time() + 86400 * (int)$settings['AteSetting']['invitation_lifetime_days']);
+                      time() + self::SecondsPerDay * (int)$settings['AteSetting']['invitation_lifetime_days']);
 
       $this->clear();
 
@@ -324,8 +339,7 @@ class AteInvitation extends ApplicationTeamEnrollerAppModel {
     $args['conditions']['AteApplication.id'] = $appIds;
     $args['conditions']['AteApplication.co_id'] = $coId;
     $args['conditions']['AteApplication.status'] = AteConfigStatusEnum::Active;
-    $args['conditions']['AteApplication.ate_application_id'] = null;
-    $args['conditions'][] = 'AteApplication.deleted IS NOT true';
+    $args['conditions'][] = self::currentRowConditions('AteApplication', 'ate_application_id');
     $args['order'] = array('AteApplication.name' => 'asc', 'AteApplication.id' => 'asc');
     $args['contain'] = false;
 
@@ -371,19 +385,16 @@ class AteInvitation extends ApplicationTeamEnrollerAppModel {
     $args = array();
     $args['conditions']['AteResearchTeam.id'] = $teamIds;
     $args['conditions']['AteResearchTeam.status'] = AteConfigStatusEnum::Active;
-    $args['conditions']['AteResearchTeam.ate_research_team_id'] = null;
-    $args['conditions'][] = 'AteResearchTeam.deleted IS NOT true';
-    $args['conditions']['CoGroup.co_group_id'] = null;
-    $args['conditions'][] = 'CoGroup.deleted IS NOT true';
+    $args['conditions'][] = self::currentRowConditions('AteResearchTeam', 'ate_research_team_id');
+    $args['conditions'][] = self::currentRowConditions('CoGroup', 'co_group_id');
     $args['order'] = array('AteResearchTeam.name' => 'asc', 'AteResearchTeam.id' => 'asc');
     $args['contain'] = array('CoGroup');
 
     $ret = array();
 
     foreach($Map->AteResearchTeam->find('all', $args) as $t) {
-      $ret[ (int)$t['AteResearchTeam']['id'] ] = !empty($t['AteResearchTeam']['name'])
-                                                 ? $t['AteResearchTeam']['name']
-                                                 : $t['CoGroup']['name'];
+      $ret[ (int)$t['AteResearchTeam']['id'] ] = self::teamLabel($t['AteResearchTeam']['name'],
+                                                                 $t['CoGroup']['name']);
     }
 
     return $ret;
@@ -412,25 +423,18 @@ class AteInvitation extends ApplicationTeamEnrollerAppModel {
     $dbc->begin();
 
     try {
-      $ok = $this->updateAll(
-        array(
-          'AteInvitation.status'                  => $dbc->value(AteInvitationStatusEnum::Revoked),
-          'AteInvitation.revoked_by_co_person_id' => (int)$actorCoPersonId,
-          'AteInvitation.revoked_at'              => $dbc->value($now),
-          'AteInvitation.modified'                => $dbc->value($now)
-        ),
-        array(
-          'AteInvitation.id'     => $invitationId,
-          'AteInvitation.co_id'  => $coId,
-          'AteInvitation.status' => AteInvitationStatusEnum::Sent
-        )
-      );
+      $revoked = $this->conditionalUpdate($this, array(
+        'status'                  => AteInvitationStatusEnum::Revoked,
+        'revoked_by_co_person_id' => (int)$actorCoPersonId,
+        'revoked_at'              => $now,
+        'modified'                => $now
+      ), array(
+        'AteInvitation.id'     => $invitationId,
+        'AteInvitation.co_id'  => $coId,
+        'AteInvitation.status' => AteInvitationStatusEnum::Sent
+      ));
 
-      if(!$ok) {
-        throw new RuntimeException(_txt('er.db.save-a', array('AteInvitation')));
-      }
-
-      if($this->getAffectedRows() !== 1) {
+      if(!$revoked) {
         $dbc->rollback();
         return false;
       }
@@ -479,7 +483,6 @@ class AteInvitation extends ApplicationTeamEnrollerAppModel {
    */
 
   public function withdrawRequest($coId, $requestId, $actorCoPersonId) {
-    $dbc = $this->getDataSource();
     $Request = $this->AteEnrollmentRequest;
     $now = date('Y-m-d H:i:s');
 
@@ -495,23 +498,16 @@ class AteInvitation extends ApplicationTeamEnrollerAppModel {
       return false;
     }
 
-    $ok = $Request->updateAll(
-      array(
-        'AteEnrollmentRequest.status'                    => $dbc->value(AteRequestStatusEnum::Revoked),
-        'AteEnrollmentRequest.withdrawn_by_co_person_id' => (int)$actorCoPersonId,
-        'AteEnrollmentRequest.modified'                  => $dbc->value($now)
-      ),
-      array(
-        'AteEnrollmentRequest.id'     => $requestId,
-        'AteEnrollmentRequest.status' => AteRequestStatusEnum::PendingDecision
-      )
-    );
+    $withdrawn = $this->conditionalUpdate($Request, array(
+      'status'                    => AteRequestStatusEnum::Revoked,
+      'withdrawn_by_co_person_id' => (int)$actorCoPersonId,
+      'modified'                  => $now
+    ), array(
+      'AteEnrollmentRequest.id'     => $requestId,
+      'AteEnrollmentRequest.status' => AteRequestStatusEnum::PendingDecision
+    ));
 
-    if(!$ok) {
-      throw new RuntimeException(_txt('er.db.save-a', array('AteEnrollmentRequest')));
-    }
-
-    if($Request->getAffectedRows() !== 1) {
+    if(!$withdrawn) {
       return false;
     }
 
@@ -531,7 +527,7 @@ class AteInvitation extends ApplicationTeamEnrollerAppModel {
    */
 
   public function findByToken($token) {
-    if(!is_string($token) || !preg_match('/^[0-9a-f]{64}$/', $token)) {
+    if(!is_string($token) || !preg_match(self::TokenHashPattern, $token)) {
       return null;
     }
 
@@ -547,7 +543,7 @@ class AteInvitation extends ApplicationTeamEnrollerAppModel {
    */
 
   public function findByTokenHash($tokenHash) {
-    if(!is_string($tokenHash) || !preg_match('/^[0-9a-f]{64}$/', $tokenHash)) {
+    if(!is_string($tokenHash) || !preg_match(self::TokenHashPattern, $tokenHash)) {
       return null;
     }
 
@@ -662,20 +658,16 @@ class AteInvitation extends ApplicationTeamEnrollerAppModel {
     $dbc->begin();
 
     try {
-      $rows = $dbc->fetchAll('SELECT id, status, expires, co_petition_id FROM ' . $this->tablePrefix
+      $rows = $this->sqlRows('SELECT id, status, expires, co_petition_id FROM ' . $this->tablePrefix
                              . 'ate_invitations WHERE id = ? AND co_id = ? FOR UPDATE',
-                             array((int)$invitationId, (int)$coId), array('cache' => false));
+                             array((int)$invitationId, (int)$coId));
 
       if(empty($rows)) {
         $dbc->rollback();
         return array('bound' => false, 'retired' => null);
       }
 
-      $inv = array();
-
-      foreach($rows[0] as $part) {
-        $inv = array_merge($inv, (array)$part);
-      }
+      $inv = $rows[0];
 
       if($inv['status'] !== AteInvitationStatusEnum::Sent || $inv['expires'] < $stamp) {
         $dbc->rollback();
@@ -734,10 +726,7 @@ class AteInvitation extends ApplicationTeamEnrollerAppModel {
     $CoPetition->getDataSource()->flushQueryCache();
     $status = $CoPetition->field('status', array('CoPetition.id' => (int)$petitionId));
 
-    if(!$status || in_array($status, array(PetitionStatusEnum::Declined,
-                                           PetitionStatusEnum::Denied,
-                                           PetitionStatusEnum::Duplicate,
-                                           PetitionStatusEnum::Finalized), true)) {
+    if(!$status || in_array($status, self::PetitionFinishedStatuses, true)) {
       return false;
     }
 
@@ -745,6 +734,28 @@ class AteInvitation extends ApplicationTeamEnrollerAppModel {
     $CoPetition->CoPetitionHistoryRecord->record((int)$petitionId, null, PetitionActionEnum::CommentAdded, $comment);
 
     return true;
+  }
+
+  /**
+   * The explanation reason for an invitation status: why an invitation in
+   * that status can no longer be answered.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  String $status AteInvitationStatusEnum value
+   * @return String         Explanation reason, or null for sent
+   */
+
+  public static function reasonForStatus($status) {
+    switch($status) {
+      case AteInvitationStatusEnum::Sent:
+        return null;
+      case AteInvitationStatusEnum::Responded:
+        return 'answered';
+      case AteInvitationStatusEnum::Revoked:
+        return 'revoked';
+      default:
+        return 'expired';
+    }
   }
 
   /**
@@ -821,12 +832,8 @@ class AteInvitation extends ApplicationTeamEnrollerAppModel {
       'INVITE_URL'   => $this->responseUrl($token)
     );
 
-    $subject = !empty($settings['email_subject'])
-               ? $settings['email_subject']
-               : _txt('pl.applicationteamenroller.setting.email_subject.default');
-    $body = !empty($settings['email_body'])
-            ? $settings['email_body']
-            : _txt('pl.applicationteamenroller.setting.email_body.default');
+    $subject = $settings['email_subject'] ?: _txt('pl.applicationteamenroller.setting.email_subject.default');
+    $body = $settings['email_body'] ?: _txt('pl.applicationteamenroller.setting.email_body.default');
 
     try {
       $email = new CakeEmail($this->emailConfig);
