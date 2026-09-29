@@ -172,6 +172,15 @@ trait AteControllerHarness {
 
     $harness->cur_co = array('Co' => array('id' => $coId));
 
+    // Controller::paginate() loads the Paginator component on demand, and the
+    // component finds its controller through the collection. The dispatcher
+    // binds the collection in constructClasses(), which also loads every
+    // declared component over the stand-ins above, so bind only the
+    // controller here.
+    $bind = new ReflectionProperty('ComponentCollection', '_Controller');
+    $bind->setAccessible(true);
+    $bind->setValue($harness->Components, $harness);
+
     return $harness;
   }
 

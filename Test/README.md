@@ -156,6 +156,21 @@ pass to `harnessBuild()`, and a Registry `StandardController` action (`add`,
 `redirect()` ends the action, and the production `_stop()` would end the whole
 suite with a success status.
 
+The harness also binds the controller's component collection to the
+controller, without loading the declared components, so an action that calls
+`paginate()` can load the Paginator component on demand.
+
+## Email
+
+Code that sends mail uses `CakeEmail` with a configuration a test can replace
+(for invitations, `AteInvitation::$emailConfig`). Tests set it to
+`AteRecordingTransport::emailConfig()` (`Test/lib/AteMailTransport.php`),
+which records each message in `AteRecordingTransport::$sent` instead of
+sending it; setting `AteRecordingTransport::$fail` makes the next send throw.
+Reset both, and the model's configuration back to `'default'`, in
+`tearDown()`. `Router::url(..., true)` has no real host in the console, so
+assert on a link's path and token, not its host.
+
 ## The compounding norm
 
 Every bug fixed in this plugin gets a regression test here, in the same pull

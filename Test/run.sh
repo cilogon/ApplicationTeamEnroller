@@ -134,7 +134,11 @@ echo "==> Verifying the suite ran the expected number of tests..."
 #       in-place edits, and creating an application, teams, and mapping).
 #   93  U5 -- AccessGroupTest (access group creation and naming, nesting
 #       and derived membership following the mapping, resync, and retiring).
-min_tests_run=93
+#  111  U6 -- AteInvitationTest (create and send in one transaction, server-side
+#       re-checks, token hash, mail-failure rollback, revoke and withdraw
+#       transitions, compose options) and AteInvitationsControllerTest
+#       (permissions, compose form, list filtering, view, revoke, withdraw).
+min_tests_run=111
 tests_run="$(sed -n 's/^\([0-9][0-9]*\) tests run, [0-9][0-9]* failed\.$/\1/p' \
   <<< "$suite_tail" | head -n 1)"
 if [ -z "$tests_run" ]; then

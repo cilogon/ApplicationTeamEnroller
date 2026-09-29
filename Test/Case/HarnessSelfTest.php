@@ -57,23 +57,34 @@ class HarnessSelfTest extends AteTestCase {
 
   /**
    * No jobs yet (U11 adds expiry). U4: the CO configuration page links the
-   * applications, research teams, and settings screens, and only those.
+   * applications, research teams, and settings screens, and only those. U6:
+   * the CO main menu links composing an invitation and the invitation list,
+   * and only those.
    */
-  public function testPluginDeclaresNoJobsYetAndConfigMenus() {
+  public function testPluginDeclaresNoJobsYetAndItsMenus() {
     $model = $this->model('ApplicationTeamEnroller.ApplicationTeamEnroller');
 
     $this->assertEqual(array(), $model->getAvailableJobs());
 
     $menus = $model->cmPluginMenus();
-    $this->assertEqual(array('coconfig'), array_keys($menus));
+    $keys = array_keys($menus);
+    sort($keys);
+    $this->assertEqual(array('coconfig', 'comain'), $keys);
 
-    $targets = array();
-    foreach($menus['coconfig'] as $label => $item) {
-      $this->assertFalse(strpos($label, 'pl.applicationteamenroller') === 0, "unresolved menu label $label");
-      $targets[] = $item['controller'] . '/' . $item['action'];
+    $expected = array(
+      'coconfig' => array('ate_applications/index', 'ate_research_teams/index', 'ate_settings/index'),
+      'comain' => array('ate_invitations/add', 'ate_invitations/index')
+    );
+
+    foreach($expected as $location => $want) {
+      $targets = array();
+      foreach($menus[$location] as $label => $item) {
+        $this->assertFalse(strpos($label, 'pl.applicationteamenroller') === 0, "unresolved menu label $label");
+        $targets[] = $item['controller'] . '/' . $item['action'];
+      }
+      sort($targets);
+      $this->assertEqual($want, $targets, "menu $location");
     }
-    sort($targets);
-    $this->assertEqual(array('ate_applications/index', 'ate_research_teams/index', 'ate_settings/index'), $targets);
   }
 
   /**

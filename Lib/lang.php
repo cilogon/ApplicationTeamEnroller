@@ -25,6 +25,10 @@ $cm_application_team_enroller_texts['en_US'] = array(
   'ct.ate_applications.pl'           => 'Applications',
   'ct.ate_application_teams.1'       => 'Authorized Research Team',
   'ct.ate_application_teams.pl'      => 'Authorized Research Teams',
+  'ct.ate_enrollment_requests.1'     => 'Enrollment Request',
+  'ct.ate_enrollment_requests.pl'    => 'Enrollment Requests',
+  'ct.ate_invitations.1'             => 'Invitation',
+  'ct.ate_invitations.pl'            => 'Invitations',
   'ct.ate_research_teams.1'          => 'Research Team',
   'ct.ate_research_teams.pl'         => 'Research Teams',
   'ct.ate_settings.1'                => 'Application Team Enroller Settings',
@@ -34,10 +38,28 @@ $cm_application_team_enroller_texts['en_US'] = array(
   'pl.applicationteamenroller.en.status.active'  => 'Active',
   'pl.applicationteamenroller.en.status.retired' => 'Retired',
 
+  'pl.applicationteamenroller.en.invitation_status.sent'      => 'Sent',
+  'pl.applicationteamenroller.en.invitation_status.responded' => 'Responded',
+  'pl.applicationteamenroller.en.invitation_status.revoked'   => 'Revoked',
+  'pl.applicationteamenroller.en.invitation_status.expired'   => 'Expired',
+
+  'pl.applicationteamenroller.en.request_status.offered'              => 'Offered',
+  'pl.applicationteamenroller.en.request_status.declined_by_enrollee' => 'Declined by Researcher',
+  'pl.applicationteamenroller.en.request_status.pending_decision'     => 'Awaiting Decision',
+  'pl.applicationteamenroller.en.request_status.approved'             => 'Approved',
+  'pl.applicationteamenroller.en.request_status.denied'               => 'Denied',
+  'pl.applicationteamenroller.en.request_status.revoked'              => 'Revoked',
+  'pl.applicationteamenroller.en.request_status.expired'              => 'Expired',
+
   // CO configuration menu (cmPluginMenus)
   'pl.applicationteamenroller.menu.applications'   => 'Team Enroller: Applications',
   'pl.applicationteamenroller.menu.research_teams' => 'Team Enroller: Research Teams',
   'pl.applicationteamenroller.menu.settings'       => 'Team Enroller: Settings',
+
+  // CO main menu (cmPluginMenus). Shown to every CO member; the screens
+  // check access themselves (KTD16).
+  'pl.applicationteamenroller.menu.invite'      => 'Invite Researcher',
+  'pl.applicationteamenroller.menu.invitations' => 'Invitations',
 
   // Application fields
   'pl.applicationteamenroller.fd.application.name' => 'Name',
@@ -86,6 +108,36 @@ $cm_application_team_enroller_texts['en_US'] = array(
   'pl.applicationteamenroller.fd.setting.login_identifier_type' => 'Login Identifier Type',
   'pl.applicationteamenroller.fd.setting.login_identifier_type.desc' => 'The Identifier type used when the plugin attaches a login to a CO Person.',
 
+  // Invitations (U6)
+  'pl.applicationteamenroller.invitation.compose' => 'Invite Researcher',
+  'pl.applicationteamenroller.invitation.compose.desc' => 'Choose one or more applications and, for each, the research teams to offer. The researcher receives one email with a link to accept or decline each application.',
+  'pl.applicationteamenroller.invitation.compose.none' => 'There are no applications you can invite researchers to.',
+  'pl.applicationteamenroller.invitation.compose.no_teams' => 'No research teams are authorized for this application.',
+  'pl.applicationteamenroller.invitation.send' => 'Send Invitation',
+  'pl.applicationteamenroller.fd.invitation.invited_email' => 'Researcher Email Address',
+  'pl.applicationteamenroller.fd.invitation.applications' => 'Applications and Research Teams',
+  'pl.applicationteamenroller.fd.invitation.inviter' => 'Invited By',
+  'pl.applicationteamenroller.fd.invitation.expires' => 'Expires',
+  'pl.applicationteamenroller.fd.invitation.sent' => 'Sent',
+  'pl.applicationteamenroller.fd.invitation.requests' => 'Requests',
+  'pl.applicationteamenroller.fd.invitation.revoked' => 'Revoked',
+  'pl.applicationteamenroller.fd.request.application' => 'Application',
+  'pl.applicationteamenroller.fd.request.teams' => 'Research Teams',
+  'pl.applicationteamenroller.invitation.none' => 'There are no invitations to show.',
+  'pl.applicationteamenroller.invitation.revoke' => 'Revoke Invitation',
+  'pl.applicationteamenroller.invitation.revoke.confirm' => 'Revoke this invitation? Its link will stop working and every request not yet answered will be revoked.',
+  'pl.applicationteamenroller.request.withdraw' => 'Withdraw',
+  'pl.applicationteamenroller.request.withdraw.confirm' => 'Withdraw this request? It will not be decided.',
+  'pl.applicationteamenroller.rs.invitation.sent' => 'Invitation sent to %1$s.',
+  'pl.applicationteamenroller.rs.invitation.revoked' => 'Invitation revoked.',
+  'pl.applicationteamenroller.rs.request.withdrawn' => 'Request withdrawn.',
+  // One line of (@APPLICATIONS) in the invitation email: application, teams
+  'pl.applicationteamenroller.invitation.email.application' => '- %1$s (research teams: %2$s)',
+  // (@EXPIRES) in the invitation email
+  'pl.applicationteamenroller.invitation.email.expires' => '%1$s UTC',
+  // (@INVITER_NAME) when the inviting admin has no name on record
+  'pl.applicationteamenroller.invitation.email.inviter' => 'An administrator',
+
   // Plugin texts
   'pl.applicationteamenroller.wedge.info' => 'This enrollment flow wedge has no settings of its own. The Application Team Enroller settings apply to the whole CO and are configured separately.',
 
@@ -113,6 +165,16 @@ The link can be used for one response and expires on (@EXPIRES).
   'pl.applicationteamenroller.er.application_team.team' => 'Only an active research team of this CO can be authorized for an application.',
   'pl.applicationteamenroller.er.application_team.application' => 'The application was not found in this CO.',
   'pl.applicationteamenroller.er.access_group.deleted' => 'The access group of this application has been deleted in Registry, so it cannot be resynchronized.',
+
+  'pl.applicationteamenroller.er.invitation.email' => 'Enter a valid email address for the researcher.',
+  'pl.applicationteamenroller.er.invitation.inviter' => 'Only a CO Person of this CO can send an invitation.',
+  'pl.applicationteamenroller.er.invitation.none' => 'Choose at least one application.',
+  'pl.applicationteamenroller.er.invitation.application' => 'You cannot invite researchers to one of the chosen applications.',
+  'pl.applicationteamenroller.er.invitation.teams' => 'Choose at least one research team for %1$s.',
+  'pl.applicationteamenroller.er.invitation.team' => 'A chosen research team is not authorized for %1$s.',
+  'pl.applicationteamenroller.er.invitation.send' => 'The invitation email to %1$s could not be sent, so no invitation was created: %2$s',
+  'pl.applicationteamenroller.er.invitation.handled' => 'This invitation was already responded to, revoked, or expired.',
+  'pl.applicationteamenroller.er.request.handled' => 'This request is no longer awaiting a decision.',
 
   // Newcomer enrollment flow checks. Each names one problem, so the
   // administrator knows what to change on the flow.

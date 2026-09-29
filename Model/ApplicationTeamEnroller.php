@@ -73,6 +73,19 @@ class ApplicationTeamEnroller extends AppModel {
           array('icon'       => 'tune',
                 'controller' => 'ate_settings',
                 'action'     => 'index')
+      ),
+      // Invitations, for application administrators (A2) and CO
+      // administrators. Registry shows comain entries to every CO member, so
+      // AteInvitationsController checks access itself (KTD16).
+      "comain" => array(
+        _txt('pl.applicationteamenroller.menu.invite') =>
+          array('icon'       => 'person_add',
+                'controller' => 'ate_invitations',
+                'action'     => 'add'),
+        _txt('pl.applicationteamenroller.menu.invitations') =>
+          array('icon'       => 'mail',
+                'controller' => 'ate_invitations',
+                'action'     => 'index')
       )
     );
   }
