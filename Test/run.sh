@@ -147,7 +147,13 @@ echo "==> Verifying the suite ran the expected number of tests..."
 #       emails without the comment) and AteEnrollmentRequestsControllerTest
 #       (queue scoping, R25 fields, link_required, refused direct posts,
 #       AE17, deny, POST only, the notification link).
-min_tests_run=176
+#  200  U8 -- AteResponsesControllerTest (landing, on-access expiry and the
+#       petition grace window, respond authorization, existing member,
+#       newcomer decline-all and draft hand-off, link_required, double
+#       submit, login switch, forged posts, confirmation states) and
+#       AteIdentitySnapshotTest (env and REDIRECT_ emails, verified login
+#       emails, lookup errors).
+min_tests_run=200
 tests_run="$(sed -n 's/^\([0-9][0-9]*\) tests run, [0-9][0-9]* failed\.$/\1/p' \
   <<< "$suite_tail" | head -n 1)"
 if [ -z "$tests_run" ]; then

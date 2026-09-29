@@ -588,6 +588,86 @@ class AteEnrollmentRequest extends ApplicationTeamEnrollerAppModel {
   }
 
   /**
+   * Save a newcomer's choices as a draft (R21, KTD11): draft_choice on each
+   * offered request of a sent invitation, true for accept and false for
+   * decline, replacing any earlier draft. Nothing is committed: the
+   * invitation stays sent and every request stays offered until the
+   * newcomer enrollment flow commits the draft.
+   *
+   * The invitation row is locked while the draft is written, so a draft
+   * never lands on an invitation that a response, revocation, or expiry has
+   * just moved on. The caller checks that the current login equals the
+   * snapshot identifier (KTD5) and that the invitation has not lapsed
+   * (KTD14).
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Integer $coId         CO ID
+   * @param  Integer $invitationId AteInvitation ID
+   * @param  Array   $choices      True (accept) or false (decline), keyed by AteEnrollmentRequest ID; one per offered request
+   * @return Boolean               True if the draft was saved, false if the invitation is no longer sent
+   * @throws InvalidArgumentException If the choices are not one boolean per offered request
+   * @throws RuntimeException         If a write fails
+   */
+
+  public function saveDraft($coId, $invitationId, $choices) {
+    $dbc = $this->getDataSource();
+    $now = date('Y-m-d H:i:s');
+
+    $dbc->begin();
+
+    try {
+      $inv = $this->sqlRows('SELECT id, status FROM ' . $this->tablePrefix . 'ate_invitations'
+                            . ' WHERE id = ? AND co_id = ? FOR UPDATE', array((int)$invitationId, (int)$coId));
+
+      if(empty($inv) || $inv[0]['status'] !== AteInvitationStatusEnum::Sent) {
+        $dbc->rollback();
+        return false;
+      }
+
+      $offered = array();
+
+      foreach($this->sqlRows('SELECT id FROM ' . $this->tablePrefix . 'ate_enrollment_requests'
+                             . ' WHERE ate_invitation_id = ? AND status = ? ORDER BY id',
+                             array((int)$invitationId, AteRequestStatusEnum::Offered)) as $r) {
+        $offered[(int)$r['id']] = true;
+      }
+
+      $draft = array();
+
+      foreach((array)$choices as $reqId => $choice) {
+        $b = filter_var($choice, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+
+        if(!isset($offered[(int)$reqId]) || $b === null) {
+          throw new InvalidArgumentException(_txt('pl.applicationteamenroller.er.response.choices'));
+        }
+
+        $draft[(int)$reqId] = $b;
+      }
+
+      if(empty($offered) || count($draft) !== count($offered)) {
+        throw new InvalidArgumentException(_txt('pl.applicationteamenroller.er.response.choices'));
+      }
+
+      foreach($draft as $reqId => $b) {
+        if(!$this->conditionalUpdate($this, array('draft_choice' => $b, 'modified' => $now), array(
+          'id'                => $reqId,
+          'ate_invitation_id' => (int)$invitationId,
+          'status'            => AteRequestStatusEnum::Offered
+        ))) {
+          throw new RuntimeException(_txt('er.db.save-a', array('AteEnrollmentRequest')));
+        }
+      }
+
+      $this->commitOrFail($dbc);
+    } catch(Exception $e) {
+      $dbc->rollback();
+      throw $e;
+    }
+
+    return true;
+  }
+
+  /**
    * Approve a pending request (F3, R26, R29, KTD8, KTD9). In one
    * transaction: move it from pending_decision to approved, re-check each
    * offered team (a team no longer mapped to the application, no longer a

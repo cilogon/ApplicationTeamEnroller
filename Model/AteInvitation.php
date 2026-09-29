@@ -158,6 +158,10 @@ class AteInvitation extends ApplicationTeamEnrollerAppModel {
   // transport.
   public $emailConfig = 'default';
 
+  // How long past its expiry an invitation with a bound newcomer petition
+  // stays live (KTD14)
+  const PetitionGraceSeconds = 86400;
+
   /**
    * Create an invitation and email its link, in one transaction (F1, R10,
    * R14, R15, KTD4, KTD13).
@@ -514,6 +518,118 @@ class AteInvitation extends ApplicationTeamEnrollerAppModel {
     // The request no longer awaits a decision, so its decider notification
     // is resolved (R35, KTD12). This never undoes the withdrawal.
     $Request->resolvePendingNotification($requestId, $actorCoPersonId);
+
+    return true;
+  }
+
+  /**
+   * Find the invitation a link token belongs to, by the token's hash (KTD4).
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  String $token Token as carried in the link
+   * @return Array         The AteInvitation fields, or null if there is none
+   */
+
+  public function findByToken($token) {
+    if(!is_string($token) || !preg_match('/^[0-9a-f]{64}$/', $token)) {
+      return null;
+    }
+
+    return $this->findByTokenHash(self::hashToken($token));
+  }
+
+  /**
+   * Find the invitation with a token hash (KTD4).
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  String $tokenHash SHA-256 of the token
+   * @return Array             The AteInvitation fields, or null if there is none
+   */
+
+  public function findByTokenHash($tokenHash) {
+    if(!is_string($tokenHash) || !preg_match('/^[0-9a-f]{64}$/', $tokenHash)) {
+      return null;
+    }
+
+    $args = array();
+    $args['conditions']['AteInvitation.token_hash'] = $tokenHash;
+    $args['contain'] = false;
+
+    // Always read the current row: the status is what every caller decides on
+    $this->getDataSource()->flushQueryCache();
+    $row = $this->find('first', $args);
+
+    return empty($row['AteInvitation']) ? null : $row['AteInvitation'];
+  }
+
+  /**
+   * Expire an invitation on access if it has lapsed (R17, KTD14): a sent
+   * invitation past its expiry becomes expired, and its offered requests
+   * with it, in one transaction. An invitation with a bound newcomer
+   * petition is left alone until 24 hours past its expiry, because the
+   * enrollment flow honors a petition bound while the invitation was live
+   * (KTD11).
+   *
+   * The inviting admin is not notified here: expiry_notified stays false, so
+   * the expiry job notifies them once (R37). Retiring a bound petition after
+   * the grace window is also the job's.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Integer $invitationId AteInvitation ID
+   * @param  Integer $now          Current Unix time, or null for time()
+   * @return Boolean               True if this call expired it
+   * @throws RuntimeException      If an update fails
+   */
+
+  public function expireIfLapsed($invitationId, $now = null) {
+    $now = ($now === null) ? time() : (int)$now;
+    $stamp = date('Y-m-d H:i:s', $now);
+    $graceStamp = date('Y-m-d H:i:s', $now - self::PetitionGraceSeconds);
+    $dbc = $this->getDataSource();
+
+    $dbc->begin();
+
+    try {
+      // A plain statement: Cake's updateAll() joins the belongsTo tables and
+      // then cannot qualify the columns of an OR condition on Postgres
+      $ok = $dbc->fetchAll(
+        'UPDATE ' . $this->tablePrefix . 'ate_invitations SET status = ?, modified = ?'
+        . ' WHERE id = ? AND status = ? AND expires < ?'
+        . ' AND (co_petition_id IS NULL OR expires < ?)',
+        array(AteInvitationStatusEnum::Expired, $stamp, (int)$invitationId,
+              AteInvitationStatusEnum::Sent, $stamp, $graceStamp),
+        array('cache' => false)
+      );
+
+      if($ok === false) {
+        throw new RuntimeException(_txt('er.db.save-a', array('AteInvitation')));
+      }
+
+      if($dbc->lastAffected() !== 1) {
+        $dbc->rollback();
+        return false;
+      }
+
+      $ok = $this->AteEnrollmentRequest->updateAll(
+        array(
+          'AteEnrollmentRequest.status'   => $dbc->value(AteRequestStatusEnum::Expired),
+          'AteEnrollmentRequest.modified' => $dbc->value($stamp)
+        ),
+        array(
+          'AteEnrollmentRequest.ate_invitation_id' => (int)$invitationId,
+          'AteEnrollmentRequest.status'            => AteRequestStatusEnum::Offered
+        )
+      );
+
+      if(!$ok) {
+        throw new RuntimeException(_txt('er.db.save-a', array('AteEnrollmentRequest')));
+      }
+
+      $dbc->commit();
+    } catch(Exception $e) {
+      $dbc->rollback();
+      throw $e;
+    }
 
     return true;
   }
