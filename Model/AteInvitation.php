@@ -635,6 +635,94 @@ class AteInvitation extends ApplicationTeamEnrollerAppModel {
   }
 
   /**
+   * Bind a newcomer petition to an invitation (R21, KTD11). The invitation
+   * must be sent and not past its expiry: a petition is bound only while the
+   * invitation is live, and a bound petition is then honored through the
+   * grace window (KTD14). At most one petition is in flight per invitation:
+   * an earlier bound petition that has not finished is retired as Declined
+   * first, which stops core from finalizing it and marks its CoPerson Role
+   * (if any) Declined. A finished earlier petition is left as it is.
+   *
+   * The invitation row is locked for the whole change.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Integer $coId         CO ID
+   * @param  Integer $invitationId AteInvitation ID
+   * @param  Integer $petitionId   CoPetition ID to bind
+   * @param  Integer $now          Current Unix time, or null for time()
+   * @return Array                 'bound' (Boolean) and 'retired' (the retired CoPetition ID, or null)
+   * @throws RuntimeException If a write fails
+   */
+
+  public function bindPetition($coId, $invitationId, $petitionId, $now = null) {
+    $stamp = date('Y-m-d H:i:s', ($now === null) ? time() : (int)$now);
+    $dbc = $this->getDataSource();
+    $retired = null;
+
+    $dbc->begin();
+
+    try {
+      $rows = $dbc->fetchAll('SELECT id, status, expires, co_petition_id FROM ' . $this->tablePrefix
+                             . 'ate_invitations WHERE id = ? AND co_id = ? FOR UPDATE',
+                             array((int)$invitationId, (int)$coId), array('cache' => false));
+
+      if(empty($rows)) {
+        $dbc->rollback();
+        return array('bound' => false, 'retired' => null);
+      }
+
+      $inv = array();
+
+      foreach($rows[0] as $part) {
+        $inv = array_merge($inv, (array)$part);
+      }
+
+      if($inv['status'] !== AteInvitationStatusEnum::Sent || $inv['expires'] < $stamp) {
+        $dbc->rollback();
+        return array('bound' => false, 'retired' => null);
+      }
+
+      $prior = empty($inv['co_petition_id']) ? null : (int)$inv['co_petition_id'];
+
+      if($prior === (int)$petitionId) {
+        $dbc->commit();
+        return array('bound' => true, 'retired' => null);
+      }
+
+      if($prior !== null) {
+        $CoPetition = ClassRegistry::init('CoPetition');
+        $status = $CoPetition->field('status', array('CoPetition.id' => $prior));
+
+        if($status && !in_array($status, array(PetitionStatusEnum::Declined,
+                                               PetitionStatusEnum::Denied,
+                                               PetitionStatusEnum::Duplicate,
+                                               PetitionStatusEnum::Finalized), true)) {
+          $CoPetition->updateStatus($prior, PetitionStatusEnum::Declined, null);
+          $CoPetition->CoPetitionHistoryRecord->record($prior, null, PetitionActionEnum::CommentAdded,
+            _txt('pl.applicationteamenroller.rs.petition.retired', array((int)$petitionId, (int)$invitationId)));
+          $retired = $prior;
+        }
+      }
+
+      $ok = $dbc->fetchAll('UPDATE ' . $this->tablePrefix . 'ate_invitations SET co_petition_id = ?, modified = ?'
+                           . ' WHERE id = ? AND status = ?',
+                           array((int)$petitionId, $stamp, (int)$invitationId, AteInvitationStatusEnum::Sent),
+                           array('cache' => false));
+
+      if($ok === false || $dbc->lastAffected() !== 1) {
+        throw new RuntimeException(_txt('er.db.save-a', array('AteInvitation')));
+      }
+
+      $dbc->commit();
+    } catch(Exception $e) {
+      $dbc->rollback();
+      throw $e;
+    }
+
+    return array('bound' => true, 'retired' => $retired);
+  }
+
+  /**
    * Generate a new invitation token: 32 random bytes, hex encoded (KTD4).
    *
    * @since  COmanage Registry v4.6.0

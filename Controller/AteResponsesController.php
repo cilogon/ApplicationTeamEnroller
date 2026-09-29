@@ -17,12 +17,16 @@
  *   one login can never commit against another's snapshot.
  * - confirmation: the state of each application after a response this
  *   session committed, with no mismatch details (R19).
+ * - explanation: why a newcomer's enrollment flow was stopped, for the
+ *   enrollment flow wedge (U9), which can only redirect.
  *
  * Existing members (KTD6), newcomers who decline everything, and logins
  * whose approval would link them to an existing person (R21, link_required)
  * are committed here through AteEnrollmentRequest::commitResponse(). A
  * newcomer who accepts anything has their choices saved as a draft and is
- * handed to the newcomer enrollment flow (KTD11, U9).
+ * handed to the newcomer enrollment flow (KTD11), whose wedge
+ * (ApplicationTeamEnrollerCoPetitionsController) commits the draft once the
+ * flow has created their CoPerson.
  *
  * @link          https://github.com/cilogon/ApplicationTeamEnroller
  * @package       registry-plugin
@@ -59,6 +63,12 @@ class AteResponsesController extends ApplicationTeamEnrollerAppController {
   const SessionConfirmation = 'ApplicationTeamEnroller.Response.confirmation';
   // co_id, invitation_id, identifier, snapshot: the newcomer binding (KTD11)
   const SessionNewcomer     = 'ApplicationTeamEnroller.Newcomer';
+
+  // Reasons the enrollment flow wedge may send to explanation()
+  public static $flowReasons = array(
+    'unknown', 'revoked', 'expired', 'answered', 'ambiguous', 'error',
+    'newcomer_session', 'newcomer_incomplete'
+  );
 
   /**
    * Callback before other controller methods are invoked or views are
@@ -135,6 +145,7 @@ class AteResponsesController extends ApplicationTeamEnrollerAppController {
     // Respond to the invitation in the session, and see the result?
     $p['respond'] = $this->AteAuthz->mayRespond();
     $p['confirmation'] = $this->AteAuthz->mayRespond();
+    $p['explanation'] = $this->AteAuthz->mayRespond();
 
     $this->set('permissions', $p);
 
@@ -264,6 +275,19 @@ class AteResponsesController extends ApplicationTeamEnrollerAppController {
   }
 
   /**
+   * Explain why the newcomer enrollment flow stopped (U9). The wedge in the
+   * flow can only redirect, so it names a reason here; only the reasons it
+   * uses are accepted.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  String $reason Explanation reason
+   */
+
+  public function explanation($reason = null) {
+    $this->explain(in_array($reason, self::$flowReasons, true) ? $reason : 'no_invitation');
+  }
+
+  /**
    * Record a submitted response. The form must be the one built for the
    * session's snapshot, the current login must be the snapshot's (KTD5), and
    * there must be one answer per offered application of the session's
@@ -307,8 +331,24 @@ class AteResponsesController extends ApplicationTeamEnrollerAppController {
     }
 
     try {
+      // A newcomer continuing an interrupted enrollment is recognized by the
+      // invitation's bound petition, not by the login mapping (KTD11): its
+      // enrollee may already carry this login. An unfinished petition goes
+      // back through the flow; a finalized one (the flow completed but the
+      // response did not commit) commits against its enrollee.
+      $continuing = $this->AteEnrollmentRequest->boundNewcomer($coId, $inv['id'], $username);
+
+      if($continuing !== null
+         && $continuing['status'] !== PetitionStatusEnum::Finalized
+         && in_array(true, $choices, true)) {
+        $this->continueAsNewcomer($coId, $inv, $snapshot, $choices);
+        return;
+      }
+
       // KTD6: a login already linked to a CoPerson in the CO is an existing member
-      $responder = $this->AteEnrollmentRequest->existingMemberCoPersonId($coId, $username);
+      $responder = ($continuing !== null)
+                   ? $continuing['co_person_id']
+                   : $this->AteEnrollmentRequest->existingMemberCoPersonId($coId, $username);
 
       if(!$responder && in_array(true, $choices, true)) {
         $eval = $this->AteEnrollmentRequest->evaluateIdentity($coId, $inv['invited_email'], $snapshot);
@@ -408,12 +448,11 @@ class AteResponsesController extends ApplicationTeamEnrollerAppController {
   }
 
   /**
-   * Send a newcomer into the CO's newcomer enrollment flow (KTD11).
-   *
-   * U9 completes this: it redirects to the configured flow
-   * (AteSetting.newcomer_co_enrollment_flow_id), whose wedge checks the
-   * SessionNewcomer binding and the draft. Until then the draft is saved,
-   * the invitation stays sent, and the researcher is told to come back.
+   * Send a newcomer into the CO's newcomer enrollment flow (KTD11): the
+   * start of AteSetting.newcomer_co_enrollment_flow_id, whose wedge checks
+   * the SessionNewcomer binding and the draft. If the CO has no usable
+   * newcomer flow, the draft stays saved, the invitation stays sent, and the
+   * researcher is told so.
    *
    * @since  COmanage Registry v4.6.0
    * @param  Integer $coId         CO ID
@@ -421,9 +460,24 @@ class AteResponsesController extends ApplicationTeamEnrollerAppController {
    */
 
   protected function redirectToNewcomerFlow($coId, $invitationId) {
-    $this->log('ApplicationTeamEnroller newcomer enrollment is not available yet; draft saved for invitation '
-               . (int)$invitationId, LOG_INFO);
-    $this->explain('newcomer_unavailable');
+    $settings = $this->AteSetting->getOrCreateForCo($coId);
+    $flowId = $settings['AteSetting']['newcomer_co_enrollment_flow_id'];
+    $problem = empty($flowId) ? 'no newcomer enrollment flow is configured'
+                              : $this->AteSetting->newcomerFlowProblem($coId, $flowId);
+
+    if($problem !== null) {
+      $this->log('ApplicationTeamEnroller cannot hand invitation ' . (int)$invitationId
+                 . ' to the newcomer enrollment flow: ' . $problem . '; draft saved');
+      $this->explain('newcomer_unavailable');
+      return;
+    }
+
+    $this->redirect(array(
+      'plugin'     => null,
+      'controller' => 'co_petitions',
+      'action'     => 'start',
+      'coef'       => (int)$flowId
+    ));
   }
 
   /**

@@ -153,7 +153,13 @@ echo "==> Verifying the suite ran the expected number of tests..."
 #       submit, login switch, forged posts, confirmation states) and
 #       AteIdentitySnapshotTest (env and REDIRECT_ emails, verified login
 #       emails, lookup errors).
-min_tests_run=200
+#  214  U9 -- ApplicationTeamEnrollerCoPetitionsControllerTest (real petitions
+#       through Registry's CoPetitionsController and the wedge: step order,
+#       one CoPerson and the committed response, start refusals, done: bypass
+#       left unbound, expiry after binding, existing member next time,
+#       abandonment, retiring an earlier petition, continuing newcomers,
+#       login switch at finalize, no usable flow, a flow without a role).
+min_tests_run=214
 tests_run="$(sed -n 's/^\([0-9][0-9]*\) tests run, [0-9][0-9]* failed\.$/\1/p' \
   <<< "$suite_tail" | head -n 1)"
 if [ -z "$tests_run" ]; then

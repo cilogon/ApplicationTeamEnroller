@@ -167,6 +167,27 @@ The harness also binds the controller's component collection to the
 controller, without loading the declared components, so an action that calls
 `paginate()` can load the Paginator component on demand.
 
+### Driving a petition
+
+`Test/Case/Controller/ApplicationTeamEnrollerCoPetitionsControllerTest.php`
+runs real petitions through Registry's `CoPetitionsController` and the
+plugin's wedge controller. Its `follow()` takes a URL, builds the controller it
+names, invokes the action with the petition id in `params['pass']` and the
+named parameters (`coef`, `efwid`, `done`, `token`) in `params['named']`, and
+keeps following each redirect and each "next step" meta refresh target,
+submitting the petitioner attributes form when it is shown. Two differences
+from the plain harness matter there: `redirect()` throws an `Error`, not an
+`Exception`, because `dispatch()` catches every `Exception` a plugin step
+throws; and `render()` is recorded, because `dispatch()` renders the
+`nextStep` page between steps. `beforeFilter()` and `isAuthorized()` still do
+not run, so the Auth, petition token, and read-only petition checks are left
+to a browser run.
+
+Saving a CoPerson through a petition needs what Registry gives a CO when it
+creates one: the automatic `CO:members:active` and `CO:members:all` groups,
+and the CO's extended types for any typed attribute the form submits (the test
+seeds the `member` affiliation).
+
 ## Email
 
 Code that sends mail uses `CakeEmail` with a configuration a test can replace

@@ -668,6 +668,67 @@ class AteEnrollmentRequest extends ApplicationTeamEnrollerAppModel {
   }
 
   /**
+   * A newcomer's saved draft (R21, KTD11): the draft choice of each offered
+   * request of an invitation.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Integer $invitationId AteInvitation ID
+   * @return Array                 True (accept) or false (decline), keyed by AteEnrollmentRequest ID;
+   *                               null if nothing is offered or an offered request has no draft
+   */
+
+  public function draftChoices($invitationId) {
+    $choices = array();
+
+    foreach($this->sqlRows('SELECT id, draft_choice FROM ' . $this->tablePrefix . 'ate_enrollment_requests'
+                           . ' WHERE ate_invitation_id = ? AND status = ? ORDER BY id',
+                           array((int)$invitationId, AteRequestStatusEnum::Offered)) as $r) {
+      if($r['draft_choice'] === null) {
+        return null;
+      }
+
+      $choices[(int)$r['id']] = self::truthy($r['draft_choice']);
+    }
+
+    return empty($choices) ? null : $choices;
+  }
+
+  /**
+   * The newcomer petition bound to an invitation, if its enrollee CoPerson
+   * already carries a login (KTD6, KTD11). This is how a newcomer continuing
+   * an interrupted enrollment is told from an established member: through
+   * the invitation's bound petition, not through the login mapping alone.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Integer $coId         CO ID
+   * @param  Integer $invitationId AteInvitation ID
+   * @param  String  $identifier   Login identifier
+   * @return Array                 'co_petition_id', 'status' (PetitionStatusEnum), 'co_person_id';
+   *                               or null if no bound petition's enrollee carries the login
+   */
+
+  public function boundNewcomer($coId, $invitationId, $identifier) {
+    $rows = $this->sqlRows(
+      'SELECT p.id AS id, p.status AS status, p.enrollee_co_person_id AS co_person_id'
+      . ' FROM ' . $this->tablePrefix . 'ate_invitations inv'
+      . ' JOIN ' . $this->tablePrefix . 'co_petitions p ON p.id = inv.co_petition_id'
+      . ' WHERE inv.id = ? AND inv.co_id = ? AND p.co_id = ?',
+      array((int)$invitationId, (int)$coId, (int)$coId)
+    );
+
+    if(empty($rows) || empty($rows[0]['co_person_id'])
+       || !in_array((int)$rows[0]['co_person_id'], $this->loginCoPersonIds($coId, $identifier), true)) {
+      return null;
+    }
+
+    return array(
+      'co_petition_id' => (int)$rows[0]['id'],
+      'status'         => $rows[0]['status'],
+      'co_person_id'   => (int)$rows[0]['co_person_id']
+    );
+  }
+
+  /**
    * Approve a pending request (F3, R26, R29, KTD8, KTD9). In one
    * transaction: move it from pending_decision to approved, re-check each
    * offered team (a team no longer mapped to the application, no longer a

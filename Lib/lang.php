@@ -201,6 +201,7 @@ The link can be used for one response and expires on (@EXPIRES).
   'pl.applicationteamenroller.er.query' => 'A database query failed.',
   // History record comment when approval links a login: identifier, type
   'pl.applicationteamenroller.rs.login.linked' => 'Linked login %1$s (%2$s) by Application Team Enroller approval',
+  'pl.applicationteamenroller.rs.petition.retired' => 'Retired by Application Team Enroller: petition %1$s replaced it for invitation %2$s',
 
   // Response pages (U8). The researcher never sees mismatch details (R19).
   'pl.applicationteamenroller.response.title' => 'Respond to Invitation',
@@ -227,7 +228,9 @@ The link can be used for one response and expires on (@EXPIRES).
   'pl.applicationteamenroller.response.explanation.no_invitation' => 'There is no invitation to respond to. Please follow the link in your invitation email.',
   'pl.applicationteamenroller.response.explanation.ambiguous' => 'Your response cannot be recorded because your login is linked to more than one person here. Please contact the person who invited you.',
   'pl.applicationteamenroller.response.explanation.error' => 'Your response could not be recorded because of an error. Please try again later, or contact the person who invited you.',
-  'pl.applicationteamenroller.response.explanation.newcomer_unavailable' => 'Your choices have been saved, but enrollment for new researchers is not available yet. Please follow your invitation link again later.',
+  'pl.applicationteamenroller.response.explanation.newcomer_unavailable' => 'Your choices have been saved, but enrollment for new researchers is not set up here yet. Please contact the person who invited you, and follow your invitation link again later.',
+  'pl.applicationteamenroller.response.explanation.newcomer_session' => 'Enrollment can only continue from your invitation link, with the same login you responded with. Please follow the link in your invitation email again.',
+  'pl.applicationteamenroller.response.explanation.newcomer_incomplete' => 'Your enrollment could not be completed. Please follow the link in your invitation email again, or contact the person who invited you.',
   'pl.applicationteamenroller.er.response.stale' => 'Your login or this page changed since it was shown. Please review your choices and submit again.',
 
   // Decision queue (U10)
