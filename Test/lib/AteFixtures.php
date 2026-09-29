@@ -167,6 +167,116 @@ class AteFixtures {
     ));
   }
 
+  /**
+   * Seed an application (cm_ate_applications) in $coId. $overrides sets or
+   * adds columns, for example the admin, approver, or access group ids.
+   *
+   * ate_application_id is the ChangelogBehavior self-reference and must be
+   * NULL for a current (non-historical) row.
+   */
+  public function application($coId, $name, $overrides = array()) {
+    return $this->insert('cm_ate_applications', $overrides + array(
+      'co_id' => $coId,
+      'name' => $name,
+      'approval_required' => true,
+      'status' => 'active',
+      'revision' => 0,
+      'deleted' => false,
+      'ate_application_id' => null
+    ));
+  }
+
+  /**
+   * Seed a research team (cm_ate_research_teams) backed by CoGroup $groupId.
+   *
+   * ate_research_team_id is the ChangelogBehavior self-reference and must be
+   * NULL for a current (non-historical) row.
+   */
+  public function researchTeam($groupId, $overrides = array()) {
+    return $this->insert('cm_ate_research_teams', $overrides + array(
+      'co_group_id' => $groupId,
+      'status' => 'active',
+      'revision' => 0,
+      'deleted' => false,
+      'ate_research_team_id' => null
+    ));
+  }
+
+  /**
+   * Seed an application-to-team mapping row (cm_ate_application_teams).
+   *
+   * ate_application_team_id is the ChangelogBehavior self-reference and must
+   * be NULL for a current (non-historical) row.
+   */
+  public function applicationTeam($applicationId, $researchTeamId, $overrides = array()) {
+    return $this->insert('cm_ate_application_teams', $overrides + array(
+      'ate_application_id' => $applicationId,
+      'ate_research_team_id' => $researchTeamId,
+      'revision' => 0,
+      'deleted' => false,
+      'ate_application_team_id' => null
+    ));
+  }
+
+  /**
+   * Seed an invitation (cm_ate_invitations) in $coId. The token hash is
+   * random so several invitations never collide on its unique index.
+   */
+  public function invitation($coId, $overrides = array()) {
+    return $this->insert('cm_ate_invitations', $overrides + array(
+      'co_id' => $coId,
+      'invited_email' => 'invitee-' . substr(uniqid(), -6) . '@example.org',
+      'status' => 'sent',
+      'expires' => date('Y-m-d H:i:s', time() + 14 * 86400),
+      'token_hash' => hash('sha256', random_bytes(32)),
+      'mismatch' => false,
+      'expiry_notified' => false
+    ));
+  }
+
+  /** Seed a per-application request (cm_ate_enrollment_requests). */
+  public function enrollmentRequest($invitationId, $applicationId, $overrides = array()) {
+    return $this->insert('cm_ate_enrollment_requests', $overrides + array(
+      'ate_invitation_id' => $invitationId,
+      'ate_application_id' => $applicationId,
+      'status' => 'offered'
+    ));
+  }
+
+  /** Seed an offered team on a request (cm_ate_enrollment_request_teams). */
+  public function enrollmentRequestTeam($requestId, $researchTeamId, $overrides = array()) {
+    return $this->insert('cm_ate_enrollment_request_teams', $overrides + array(
+      'ate_enrollment_request_id' => $requestId,
+      'ate_research_team_id' => $researchTeamId
+    ));
+  }
+
+  /**
+   * The cleanup() $alsoPurge map that removes every plugin row belonging to
+   * $coId, including rows the code under test created and ChangelogBehavior
+   * archive copies, children before parents.
+   *
+   * @param  Integer $coId CO ID
+   * @return Array         table => WHERE clause
+   */
+  public function pluginRowsFor($coId) {
+    $coId = (int)$coId;
+    $inv = 'SELECT id FROM cm_ate_invitations WHERE co_id = ' . $coId;
+    $req = 'SELECT id FROM cm_ate_enrollment_requests WHERE ate_invitation_id IN (' . $inv . ')';
+    $app = 'SELECT id FROM cm_ate_applications WHERE co_id = ' . $coId;
+    $grp = 'SELECT id FROM cm_co_groups WHERE co_id = ' . $coId;
+
+    return array(
+      'cm_ate_enrollment_request_teams' => 'ate_enrollment_request_id IN (' . $req . ')',
+      'cm_ate_enrollment_requests' => 'ate_invitation_id IN (' . $inv . ')',
+      'cm_ate_invitations' => 'co_id = ' . $coId,
+      'cm_ate_application_teams' => 'ate_application_id IN (' . $app . ')',
+      'cm_ate_applications' => 'co_id = ' . $coId,
+      'cm_ate_research_teams' => 'co_group_id IN (' . $grp . ')',
+      'cm_ate_settings' => 'co_id = ' . $coId
+    );
+  }
+
   /** A unique, traceable tag for one test's fixture rows. */
   public static function tag($prefix) {
     return $prefix . '-' . getmypid() . '-' . substr(uniqid(), -6);

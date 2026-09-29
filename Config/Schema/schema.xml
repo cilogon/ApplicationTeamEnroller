@@ -39,4 +39,279 @@
       <col>application_team_enroller_id</col>
     </index>
   </table>
+
+  <!--
+    Configuration tables (applications, research teams, the application-to-team
+    mapping, settings) carry ChangelogBehavior columns. Their unique rules (one
+    research team per CoGroup, one mapping row per application and team, one
+    settings row per CO) are model validation rules, not unique indexes:
+    ChangelogBehavior archives an edit as a copy of the row with the same
+    values, and a soft-deleted row keeps its values.
+  -->
+  <table name="ate_settings">
+    <field name="id" type="I">
+      <key />
+      <autoincrement />
+    </field>
+    <field name="co_id" type="I">
+      <notnull />
+      <constraint>REFERENCES cm_cos(id)</constraint>
+    </field>
+    <field name="invitation_lifetime_days" type="I" />
+    <field name="email_subject" type="C" size="256" />
+    <field name="email_body" type="X" />
+    <field name="newcomer_co_enrollment_flow_id" type="I">
+      <constraint>REFERENCES cm_co_enrollment_flows(id)</constraint>
+    </field>
+    <field name="email_env_vars" type="C" size="256" />
+    <field name="login_identifier_type" type="C" size="32" />
+    <field name="created" type="T" />
+    <field name="modified" type="T" />
+    <field name="ate_setting_id" type="I">
+      <constraint>REFERENCES cm_ate_settings(id)</constraint>
+    </field>
+    <field name="revision" type="I" />
+    <field name="deleted" type="L" />
+    <field name="actor_identifier" type="C" size="256" />
+
+    <index name="ate_settings_i1">
+      <col>co_id</col>
+    </index>
+    <index name="ate_settings_i2">
+      <col>ate_setting_id</col>
+    </index>
+  </table>
+
+  <table name="ate_applications">
+    <field name="id" type="I">
+      <key />
+      <autoincrement />
+    </field>
+    <field name="co_id" type="I">
+      <notnull />
+      <constraint>REFERENCES cm_cos(id)</constraint>
+    </field>
+    <field name="name" type="C" size="256" />
+    <field name="client_identifier" type="C" size="256" />
+    <field name="admin_co_group_id" type="I">
+      <constraint>REFERENCES cm_co_groups(id)</constraint>
+    </field>
+    <field name="approver_co_group_id" type="I">
+      <constraint>REFERENCES cm_co_groups(id)</constraint>
+    </field>
+    <field name="access_co_group_id" type="I">
+      <constraint>REFERENCES cm_co_groups(id)</constraint>
+    </field>
+    <field name="approval_required" type="L" />
+    <field name="status" type="C" size="32" />
+    <field name="created" type="T" />
+    <field name="modified" type="T" />
+    <field name="ate_application_id" type="I">
+      <constraint>REFERENCES cm_ate_applications(id)</constraint>
+    </field>
+    <field name="revision" type="I" />
+    <field name="deleted" type="L" />
+    <field name="actor_identifier" type="C" size="256" />
+
+    <index name="ate_applications_i1">
+      <col>co_id</col>
+    </index>
+    <index name="ate_applications_i2">
+      <col>admin_co_group_id</col>
+    </index>
+    <index name="ate_applications_i3">
+      <col>approver_co_group_id</col>
+    </index>
+    <index name="ate_applications_i4">
+      <col>access_co_group_id</col>
+    </index>
+    <index name="ate_applications_i5">
+      <col>ate_application_id</col>
+    </index>
+  </table>
+
+  <table name="ate_research_teams">
+    <field name="id" type="I">
+      <key />
+      <autoincrement />
+    </field>
+    <field name="co_group_id" type="I">
+      <notnull />
+      <constraint>REFERENCES cm_co_groups(id)</constraint>
+    </field>
+    <field name="name" type="C" size="256" />
+    <field name="status" type="C" size="32" />
+    <field name="created" type="T" />
+    <field name="modified" type="T" />
+    <field name="ate_research_team_id" type="I">
+      <constraint>REFERENCES cm_ate_research_teams(id)</constraint>
+    </field>
+    <field name="revision" type="I" />
+    <field name="deleted" type="L" />
+    <field name="actor_identifier" type="C" size="256" />
+
+    <index name="ate_research_teams_i1">
+      <col>co_group_id</col>
+    </index>
+    <index name="ate_research_teams_i2">
+      <col>ate_research_team_id</col>
+    </index>
+  </table>
+
+  <table name="ate_application_teams">
+    <field name="id" type="I">
+      <key />
+      <autoincrement />
+    </field>
+    <field name="ate_application_id" type="I">
+      <notnull />
+      <constraint>REFERENCES cm_ate_applications(id)</constraint>
+    </field>
+    <field name="ate_research_team_id" type="I">
+      <notnull />
+      <constraint>REFERENCES cm_ate_research_teams(id)</constraint>
+    </field>
+    <field name="created" type="T" />
+    <field name="modified" type="T" />
+    <field name="ate_application_team_id" type="I">
+      <constraint>REFERENCES cm_ate_application_teams(id)</constraint>
+    </field>
+    <field name="revision" type="I" />
+    <field name="deleted" type="L" />
+    <field name="actor_identifier" type="C" size="256" />
+
+    <index name="ate_application_teams_i1">
+      <col>ate_application_id</col>
+    </index>
+    <index name="ate_application_teams_i2">
+      <col>ate_research_team_id</col>
+    </index>
+    <index name="ate_application_teams_i3">
+      <col>ate_application_team_id</col>
+    </index>
+  </table>
+
+  <!--
+    Audit tables (invitations, requests, request teams) have no changelog
+    columns, keep every foreign key nullable, and are not listed in
+    cmPluginHasMany, so no core delete cascades into them.
+  -->
+  <table name="ate_invitations">
+    <field name="id" type="I">
+      <key />
+      <autoincrement />
+    </field>
+    <field name="co_id" type="I">
+      <constraint>REFERENCES cm_cos(id)</constraint>
+    </field>
+    <field name="invited_email" type="C" size="256" />
+    <field name="inviter_co_person_id" type="I">
+      <constraint>REFERENCES cm_co_people(id)</constraint>
+    </field>
+    <field name="invitee_co_person_id" type="I">
+      <constraint>REFERENCES cm_co_people(id)</constraint>
+    </field>
+    <field name="status" type="C" size="32" />
+    <field name="expires" type="T" />
+    <field name="token_hash" type="C" size="64" />
+    <field name="identity_emails" type="X" />
+    <field name="mismatch" type="L" />
+    <field name="responder_identifier" type="C" size="512" />
+    <field name="responder_identifier_type" type="C" size="32" />
+    <field name="responder_name" type="C" size="256" />
+    <field name="link_target_co_person_id" type="I">
+      <constraint>REFERENCES cm_co_people(id)</constraint>
+    </field>
+    <field name="co_petition_id" type="I">
+      <constraint>REFERENCES cm_co_petitions(id)</constraint>
+    </field>
+    <field name="responded_at" type="T" />
+    <field name="revoked_by_co_person_id" type="I">
+      <constraint>REFERENCES cm_co_people(id)</constraint>
+    </field>
+    <field name="revoked_at" type="T" />
+    <field name="expiry_notified" type="L" />
+    <field name="created" type="T" />
+    <field name="modified" type="T" />
+
+    <index name="ate_invitations_i1">
+      <col>token_hash</col>
+      <unique />
+    </index>
+    <index name="ate_invitations_i2">
+      <col>co_id</col>
+    </index>
+    <index name="ate_invitations_i3">
+      <col>inviter_co_person_id</col>
+    </index>
+    <index name="ate_invitations_i4">
+      <col>invitee_co_person_id</col>
+    </index>
+    <index name="ate_invitations_i5">
+      <col>co_petition_id</col>
+    </index>
+    <index name="ate_invitations_i6">
+      <col>status</col>
+    </index>
+  </table>
+
+  <table name="ate_enrollment_requests">
+    <field name="id" type="I">
+      <key />
+      <autoincrement />
+    </field>
+    <field name="ate_invitation_id" type="I">
+      <constraint>REFERENCES cm_ate_invitations(id)</constraint>
+    </field>
+    <field name="ate_application_id" type="I">
+      <constraint>REFERENCES cm_ate_applications(id)</constraint>
+    </field>
+    <field name="status" type="C" size="32" />
+    <field name="draft_choice" type="L" />
+    <field name="pending_reason" type="C" size="32" />
+    <field name="decided_by_role" type="C" size="32" />
+    <field name="decider_co_person_id" type="I">
+      <constraint>REFERENCES cm_co_people(id)</constraint>
+    </field>
+    <field name="decided_at" type="T" />
+    <field name="comment" type="X" />
+    <field name="withdrawn_by_co_person_id" type="I">
+      <constraint>REFERENCES cm_co_people(id)</constraint>
+    </field>
+    <field name="created" type="T" />
+    <field name="modified" type="T" />
+
+    <index name="ate_enrollment_requests_i1">
+      <col>ate_invitation_id</col>
+    </index>
+    <index name="ate_enrollment_requests_i2">
+      <col>ate_application_id</col>
+    </index>
+    <index name="ate_enrollment_requests_i3">
+      <col>status</col>
+    </index>
+  </table>
+
+  <table name="ate_enrollment_request_teams">
+    <field name="id" type="I">
+      <key />
+      <autoincrement />
+    </field>
+    <field name="ate_enrollment_request_id" type="I">
+      <constraint>REFERENCES cm_ate_enrollment_requests(id)</constraint>
+    </field>
+    <field name="ate_research_team_id" type="I">
+      <constraint>REFERENCES cm_ate_research_teams(id)</constraint>
+    </field>
+    <field name="outcome" type="C" size="32" />
+    <field name="created" type="T" />
+    <field name="modified" type="T" />
+
+    <index name="ate_enrollment_request_teams_i1">
+      <col>ate_enrollment_request_id</col>
+    </index>
+    <index name="ate_enrollment_request_teams_i2">
+      <col>ate_research_team_id</col>
+    </index>
+  </table>
 </schema>

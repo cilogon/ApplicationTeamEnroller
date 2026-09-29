@@ -15,8 +15,22 @@ class ApplicationTeamEnroller extends AppModel {
   // duplication reads only the first type (app/Model/AppModel.php).
   public $cmPluginType = array("enroller", "job");
 
-  // Document foreign keys
-  public $cmPluginHasMany = array();
+  // Document foreign keys. A CO delete removes the CO's settings and
+  // applications (and, through AteApplication, its mapping rows). A CoGroup
+  // delete never cascades into research teams: Registry deletes CoGroups
+  // softly and leaves the team pointing at the deleted group. The audit
+  // models (AteInvitation, AteEnrollmentRequest, AteEnrollmentRequestTeam)
+  // are deliberately absent, so no core delete reaches them.
+  public $cmPluginHasMany = array(
+    "Co" => array("AteSetting", "AteApplication"),
+    "CoGroup" => array(
+      "AteResearchTeamCoGroup" => array(
+        'className' => 'AteResearchTeam',
+        'foreignKey' => 'co_group_id',
+        'dependent' => false
+      )
+    )
+  );
 
   // Add behaviors
   public $actsAs = array('Containable', 'Changelog' => array('priority' => 5));

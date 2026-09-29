@@ -44,7 +44,7 @@ echo "==> Verifying the plugin's tables actually exist..."
 # Config/Schema/schema.xml. Adding a table there means raising this number in
 # the same change; HarnessSelfTest::testRunShTableFloorMatchesSchema fails
 # until the two agree.
-min_plugin_tables=1
+min_plugin_tables=8
 plugin_table_count="$(docker compose exec -T comanage-registry-database \
   psql -U registry_user -d registry -tAc \
   "SELECT count(*) FROM information_schema.tables
@@ -122,7 +122,10 @@ echo "==> Verifying the suite ran the expected number of tests..."
 #   12  U1 -- HarnessSelfTest (plugin model, lang bootstrap, fixtures, the
 #       controller harness, the wedge permissions, the assertion helpers, and
 #       these two floors).
-min_tests_run=12
+#   29  U2 -- SchemaAndAssociationsTest (tables, cmPluginHasMany, changelog vs
+#       audit columns, unique and enum validation, deleted-CoGroup history)
+#       and AteSettingTest (settings helper defaults and validation).
+min_tests_run=29
 tests_run="$(sed -n 's/^\([0-9][0-9]*\) tests run, [0-9][0-9]* failed\.$/\1/p' \
   <<< "$suite_tail" | head -n 1)"
 if [ -z "$tests_run" ]; then
