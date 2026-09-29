@@ -176,6 +176,22 @@ The link can be used for one response and expires on (@EXPIRES).
   'pl.applicationteamenroller.er.invitation.handled' => 'This invitation was already responded to, revoked, or expired.',
   'pl.applicationteamenroller.er.request.handled' => 'This request is no longer awaiting a decision.',
 
+  // Routing and approval (U7)
+  'pl.applicationteamenroller.er.snapshot.identifier' => 'The login identity has no identifier.',
+  'pl.applicationteamenroller.er.response.choices' => 'Accept or decline each offered application.',
+  'pl.applicationteamenroller.er.response.person' => 'Accepting an application requires a CO Person record for this login.',
+  'pl.applicationteamenroller.er.response.responder' => 'The responding CO Person does not match the login.',
+  'pl.applicationteamenroller.er.login.ambiguous' => 'This login is linked to more than one CO Person in this CO.',
+  'pl.applicationteamenroller.er.login.linked' => 'This login is already linked to another CO Person in this CO.',
+  'pl.applicationteamenroller.er.decision.role' => 'The decision needs a deciding CO Person and a valid role.',
+  'pl.applicationteamenroller.er.decision.self' => 'You cannot decide a request you responded to, or one that would link a login to you.',
+  'pl.applicationteamenroller.er.approve.person' => 'This request has no CO Person to add to its research teams.',
+  'pl.applicationteamenroller.er.approve.target' => 'The invited address belongs to more than one CO Person, so the login cannot be linked. Deny this request and send a new invitation.',
+  'pl.applicationteamenroller.er.transaction' => 'The database transaction ended unexpectedly, so the change was not completed.',
+  'pl.applicationteamenroller.er.query' => 'A database query failed.',
+  // History record comment when approval links a login: identifier, type
+  'pl.applicationteamenroller.rs.login.linked' => 'Linked login %1$s (%2$s) by Application Team Enroller approval',
+
   // Newcomer enrollment flow checks. Each names one problem, so the
   // administrator knows what to change on the flow.
   'pl.applicationteamenroller.er.newcomer_flow.notfound' => 'The selected newcomer enrollment flow was not found.',

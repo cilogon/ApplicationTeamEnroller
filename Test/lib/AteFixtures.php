@@ -327,6 +327,75 @@ class AteFixtures {
   }
 
   /**
+   * Seed an OrgIdentity in $coId. $overrides sets or adds columns.
+   *
+   * org_identity_id is the ChangelogBehavior self-reference and must be NULL
+   * for a current (non-historical) row.
+   */
+  public function orgIdentity($coId, $overrides = array()) {
+    return $this->insert('cm_org_identities', $overrides + array(
+      'co_id' => $coId,
+      'revision' => 0,
+      'deleted' => false,
+      'org_identity_id' => null
+    ));
+  }
+
+  /**
+   * Seed an Identifier. $fields names the owner (org_identity_id or
+   * co_person_id) and anything else; by default it is an Active login
+   * identifier of type oidcsub.
+   *
+   * identifier_id is the ChangelogBehavior self-reference and must be NULL
+   * for a current (non-historical) row.
+   */
+  public function identifier($identifier, $fields = array()) {
+    return $this->insert('cm_identifiers', $fields + array(
+      'identifier' => $identifier,
+      'type' => 'oidcsub',
+      'login' => true,
+      'status' => 'A',
+      'revision' => 0,
+      'deleted' => false,
+      'identifier_id' => null
+    ));
+  }
+
+  /**
+   * Seed an EmailAddress. $fields names the owner (org_identity_id or
+   * co_person_id) and anything else; by default it is verified.
+   *
+   * email_address_id is the ChangelogBehavior self-reference and must be
+   * NULL for a current (non-historical) row.
+   */
+  public function emailAddress($mail, $fields = array()) {
+    return $this->insert('cm_email_addresses', $fields + array(
+      'mail' => $mail,
+      'type' => 'official',
+      'verified' => true,
+      'revision' => 0,
+      'deleted' => false,
+      'email_address_id' => null
+    ));
+  }
+
+  /**
+   * Seed a CoOrgIdentityLink between $coPersonId and $orgIdentityId.
+   *
+   * co_org_identity_link_id is the ChangelogBehavior self-reference and must
+   * be NULL for a current (non-historical) row.
+   */
+  public function orgIdentityLink($coPersonId, $orgIdentityId, $overrides = array()) {
+    return $this->insert('cm_co_org_identity_links', $overrides + array(
+      'co_person_id' => $coPersonId,
+      'org_identity_id' => $orgIdentityId,
+      'revision' => 0,
+      'deleted' => false,
+      'co_org_identity_link_id' => null
+    ));
+  }
+
+  /**
    * The cleanup() $alsoPurge map that removes every plugin row belonging to
    * the COs, including rows the code under test created and
    * ChangelogBehavior archive copies, children before parents.
@@ -334,7 +403,9 @@ class AteFixtures {
    * It also removes the CO's groups and the Registry rows that hang off them
    * (nestings, memberships, identifiers, history records), because the
    * plugin creates an access group for every application (KTD10) and
-   * Registry derives memberships and history from its nestings.
+   * Registry derives memberships and history from its nestings. It removes
+   * the CO's OrgIdentities and their identifiers, email addresses, and links
+   * too, because approving a request can link a login (U7).
    *
    * Pass every CO a test seeded in one call. The map is keyed by table, so
    * array_merge() of two maps keeps only the second CO's clauses.
@@ -349,6 +420,7 @@ class AteFixtures {
     $app = 'SELECT id FROM cm_ate_applications WHERE co_id IN (' . $cos . ')';
     $grp = 'SELECT id FROM cm_co_groups WHERE co_id IN (' . $cos . ')';
     $ppl = 'SELECT id FROM cm_co_people WHERE co_id IN (' . $cos . ')';
+    $oid = 'SELECT id FROM cm_org_identities WHERE co_id IN (' . $cos . ')';
 
     return array(
       'cm_ate_enrollment_request_teams' => 'ate_enrollment_request_id IN (' . $req . ')',
@@ -358,10 +430,15 @@ class AteFixtures {
       'cm_ate_applications' => 'co_id IN (' . $cos . ')',
       'cm_ate_research_teams' => 'co_group_id IN (' . $grp . ')',
       'cm_ate_settings' => 'co_id IN (' . $cos . ')',
-      'cm_history_records' => 'co_group_id IN (' . $grp . ') OR co_person_id IN (' . $ppl . ')',
+      'cm_history_records' => 'co_group_id IN (' . $grp . ') OR co_person_id IN (' . $ppl . ')'
+                              . ' OR org_identity_id IN (' . $oid . ')',
       'cm_co_group_members' => 'co_group_id IN (' . $grp . ')',
       'cm_co_group_nestings' => 'co_group_id IN (' . $grp . ') OR target_co_group_id IN (' . $grp . ')',
-      'cm_identifiers' => 'co_group_id IN (' . $grp . ')',
+      'cm_identifiers' => 'co_group_id IN (' . $grp . ') OR org_identity_id IN (' . $oid . ')'
+                          . ' OR co_person_id IN (' . $ppl . ')',
+      'cm_email_addresses' => 'org_identity_id IN (' . $oid . ') OR co_person_id IN (' . $ppl . ')',
+      'cm_co_org_identity_links' => 'org_identity_id IN (' . $oid . ') OR co_person_id IN (' . $ppl . ')',
+      'cm_org_identities' => 'co_id IN (' . $cos . ')',
       'cm_co_groups' => 'co_id IN (' . $cos . ')'
     );
   }

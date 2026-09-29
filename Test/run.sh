@@ -138,7 +138,11 @@ echo "==> Verifying the suite ran the expected number of tests..."
 #       re-checks, token hash, mail-failure rollback, revoke and withdraw
 #       transitions, compose options) and AteInvitationsControllerTest
 #       (permissions, compose form, list filtering, view, revoke, withdraw).
-min_tests_run=111
+#  160  U7 -- MismatchTest (identity evaluation, verified-email collection,
+#       existing-member lookup), RoutingTest (committing a response and routing
+#       each request), and ApprovalTest (approve, deny, withdraw, memberships
+#       per KTD9, login linking, races, rollback, provisioning after commit).
+min_tests_run=160
 tests_run="$(sed -n 's/^\([0-9][0-9]*\) tests run, [0-9][0-9]* failed\.$/\1/p' \
   <<< "$suite_tail" | head -n 1)"
 if [ -z "$tests_run" ]; then

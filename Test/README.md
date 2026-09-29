@@ -110,16 +110,22 @@ retire unnoticed. `Test/Case/HarnessSelfTest.php` is the reference example.
 ## Fixtures
 
 Database-backed tests seed the rows they need with `Test/lib/AteFixtures.php`
-(`co()`, `person()`, `group()`, `member()`, `nesting()`, or `insert()` for any
+(`co()`, `person()`, `group()`, `member()`, `nesting()`, `orgIdentity()`,
+`identifier()`, `emailAddress()`, `orgIdentityLink()`, or `insert()` for any
 table) and call `cleanup()` in `tearDown()`, which deletes every tracked row
-newest first. `rows()` runs a SELECT and returns flat rows.
+newest first. The routing and approval tests share a world of applications,
+teams, and people in `Test/lib/AteEngineTestCase.php`, and drive the engine
+through `AteEnrollmentRequestProbe`, which records provisioning calls and can
+make a membership write or a login lookup fail. `rows()` runs a SELECT and returns flat rows.
 `track()` registers a row the code under test created so cleanup removes it too.
 `pluginRowsFor()` builds the purge map for plugin rows the code under test
 created; pass every CO the test seeded in one call
 (`pluginRowsFor(array($coId, $otherCoId))`), because merging two maps keeps only
 the second CO's clauses. The map also removes the COs' groups and the
 nestings, memberships, identifiers, and history records hanging off them,
-because creating an application creates its access group (KTD10).
+because creating an application creates its access group (KTD10), and the COs'
+OrgIdentities with their identifiers, email addresses, and links, because
+approving a request can link a login (U7).
 CakePHP 2.x's PHPUnit fixture machinery does not run on this stack.
 
 **Read-after-write.** CakePHP 2's `DboSource` caches every `SELECT` result

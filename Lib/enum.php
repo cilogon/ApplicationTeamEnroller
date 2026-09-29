@@ -58,6 +58,18 @@ class AtePendingReasonEnum
   public static $values = array(self::Approval, self::Mismatch, self::LinkRequired);
 }
 
+// The result of evaluating a login identity against an invitation (R22,
+// KTD5). Not stored: link_required becomes a pending_reason, and mismatch is
+// stored as the invitation's mismatch flag.
+class AteIdentityResultEnum
+{
+  const Match        = 'match';
+  const Mismatch     = 'mismatch';
+  const LinkRequired = 'link_required';
+
+  public static $values = array(self::Match, self::Mismatch, self::LinkRequired);
+}
+
 // EnrollmentRequest.decided_by_role (R8)
 class AteDecidedByRoleEnum
 {
