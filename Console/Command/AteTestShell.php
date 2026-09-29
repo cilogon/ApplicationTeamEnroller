@@ -19,6 +19,7 @@
 
 App::uses('AppShell', 'Console/Command');
 App::uses('CakePlugin', 'Core');
+App::uses('ConnectionManager', 'Model');
 
 class AteTestShell extends AppShell {
 
@@ -90,6 +91,12 @@ class AteTestShell extends AppShell {
           $failed++;
           $failures[] = "$class::$method -> " . get_class($e) . ': ' . $e->getMessage();
           $this->out("  <error>FAIL</error> $class::$method");
+          // A failure inside a transaction leaves it open, and every later
+          // test would then run inside it and fail too. Roll it back first.
+          $db = ConnectionManager::getDataSource('default');
+          for($i = 0; $i < 10 && $db->inTransaction(); $i++) {
+            $db->rollback();
+          }
           // Best-effort cleanup even on failure.
           try { $case->tearDown(); } catch(Throwable $ignored) {}
         }
