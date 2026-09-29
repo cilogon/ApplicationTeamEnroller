@@ -689,19 +689,10 @@ class AteInvitation extends ApplicationTeamEnrollerAppModel {
         return array('bound' => true, 'retired' => null);
       }
 
-      if($prior !== null) {
-        $CoPetition = ClassRegistry::init('CoPetition');
-        $status = $CoPetition->field('status', array('CoPetition.id' => $prior));
-
-        if($status && !in_array($status, array(PetitionStatusEnum::Declined,
-                                               PetitionStatusEnum::Denied,
-                                               PetitionStatusEnum::Duplicate,
-                                               PetitionStatusEnum::Finalized), true)) {
-          $CoPetition->updateStatus($prior, PetitionStatusEnum::Declined, null);
-          $CoPetition->CoPetitionHistoryRecord->record($prior, null, PetitionActionEnum::CommentAdded,
-            _txt('pl.applicationteamenroller.rs.petition.retired', array((int)$petitionId, (int)$invitationId)));
-          $retired = $prior;
-        }
+      if($prior !== null
+         && $this->retirePetition($prior, _txt('pl.applicationteamenroller.rs.petition.retired',
+                                                array((int)$petitionId, (int)$invitationId)))) {
+        $retired = $prior;
       }
 
       $ok = $dbc->fetchAll('UPDATE ' . $this->tablePrefix . 'ate_invitations SET co_petition_id = ?, modified = ?'
@@ -720,6 +711,40 @@ class AteInvitation extends ApplicationTeamEnrollerAppModel {
     }
 
     return array('bound' => true, 'retired' => $retired);
+  }
+
+  /**
+   * Retire a newcomer petition (KTD11, KTD14): an unfinished petition becomes
+   * Declined, which stops core from finalizing it and marks its CoPerson
+   * Role (if any) Declined, and $comment is recorded on it. A finished
+   * petition (Declined, Denied, Duplicate, or Finalized) is left as it is.
+   *
+   * Used when a later petition replaces a bound one (bindPetition()) and by
+   * the expiry job after the grace window (U11).
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Integer $petitionId CoPetition ID
+   * @param  String  $comment    Petition history comment
+   * @return Boolean             True if this call retired it
+   * @throws RuntimeException If a write fails
+   */
+
+  public function retirePetition($petitionId, $comment) {
+    $CoPetition = ClassRegistry::init('CoPetition');
+    $CoPetition->getDataSource()->flushQueryCache();
+    $status = $CoPetition->field('status', array('CoPetition.id' => (int)$petitionId));
+
+    if(!$status || in_array($status, array(PetitionStatusEnum::Declined,
+                                           PetitionStatusEnum::Denied,
+                                           PetitionStatusEnum::Duplicate,
+                                           PetitionStatusEnum::Finalized), true)) {
+      return false;
+    }
+
+    $CoPetition->updateStatus((int)$petitionId, PetitionStatusEnum::Declined, null);
+    $CoPetition->CoPetitionHistoryRecord->record((int)$petitionId, null, PetitionActionEnum::CommentAdded, $comment);
+
+    return true;
   }
 
   /**

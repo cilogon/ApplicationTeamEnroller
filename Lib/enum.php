@@ -97,4 +97,14 @@ class AteNotificationActionEnum
   const PendingDecision = 'pAPD';
   const Decided         = 'pADC';
   const Expired         = 'pAEX';
+  const Contained       = 'pACN';
+}
+
+// HistoryRecord and CoPetitionHistoryRecord action codes. Plugin codes take
+// the 'p' prefix (app/Lib/enum.php ActionEnum). Contained marks a CoPerson
+// the expiry job suspended, and the petition that enrolled them, so the job
+// handles each such petition once (KTD18).
+class AteHistoryActionEnum
+{
+  const Contained = 'pACN';
 }

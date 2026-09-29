@@ -169,9 +169,10 @@ controller, without loading the declared components, so an action that calls
 
 ### Driving a petition
 
-`Test/Case/Controller/ApplicationTeamEnrollerCoPetitionsControllerTest.php`
+A test that extends `AtePetitionTestCase` (`Test/lib/AtePetitionTestCase.php`)
 runs real petitions through Registry's `CoPetitionsController` and the
-plugin's wedge controller. Its `follow()` takes a URL, builds the controller it
+plugin's wedge controller; the U9 wedge tests and the U11 expiry job tests
+do. Its `follow()` takes a URL, builds the controller it
 names, invokes the action with the petition id in `params['pass']` and the
 named parameters (`coef`, `efwid`, `done`, `token`) in `params['named']`, and
 keeps following each redirect and each "next step" meta refresh target,
@@ -187,6 +188,15 @@ Saving a CoPerson through a petition needs what Registry gives a CO when it
 creates one: the automatic `CO:members:active` and `CO:members:all` groups,
 and the CO's extended types for any typed attribute the form submits (the test
 seeds the `member` affiliation).
+
+## Driving a job
+
+`Test/Case/Model/ExpireInvitationsJobTest.php` runs the expiry job the way
+`JobShell` does: it registers and starts a `CoJob` in the test CO and calls
+the job's `execute()`, so the job's own `finish()` and requeue write real
+`cm_co_jobs` rows. Its `tearDown()` removes the CO's jobs and job history
+records before the people they can name. It also restores `App.base`, which
+the job sets.
 
 ## Email
 

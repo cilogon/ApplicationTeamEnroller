@@ -265,6 +265,21 @@ The link can be used for one response and expires on (@EXPIRES).
   // application, invited address, outcome.
   'pl.applicationteamenroller.notification.pending' => 'A request for %1$s from %2$s awaits a decision',
   'pl.applicationteamenroller.notification.decided' => 'The request for %1$s from %2$s was decided: %3$s',
+  'pl.applicationteamenroller.notification.expired' => 'The invitation to %1$s expired before it was answered',
+  'pl.applicationteamenroller.notification.contained' => 'CO Person %1$s enrolled through the newcomer enrollment flow without an invitation (petition %2$s) and was suspended',
+
+  // The expiry job (U11, KTD14, KTD18)
+  'pl.applicationteamenroller.job.expire_invitations' => 'Expire lapsed invitations, notify their inviting administrators, and suspend people who enrolled through the newcomer enrollment flow without an invitation',
+  'pl.applicationteamenroller.job.expire_invitations.requeue' => 'Run again this many minutes after each run (omit or 0 to run once)',
+  'pl.applicationteamenroller.job.expire_invitations.done' => 'Expired %1$s invitations, retired %2$s petitions, notified %3$s inviting administrators, suspended %4$s people, %5$s errors',
+  'pl.applicationteamenroller.job.expire_invitations.expired' => 'Invitation %1$s expired',
+  'pl.applicationteamenroller.job.expire_invitations.retired' => 'Petition %1$s of expired invitation %2$s retired',
+  'pl.applicationteamenroller.job.expire_invitations.notified' => 'Inviting administrator of invitation %1$s notified of its expiry',
+  'pl.applicationteamenroller.job.expire_invitations.contained' => 'CO Person %1$s from petition %2$s suspended',
+  'pl.applicationteamenroller.job.expire_invitations.error' => 'Error: %1$s',
+  'pl.applicationteamenroller.rs.petition.retired.expired' => 'Retired by Application Team Enroller: invitation %1$s expired',
+  'pl.applicationteamenroller.rs.contained' => 'Suspended by Application Team Enroller: enrolled through the newcomer enrollment flow by petition %1$s, which no invitation is bound to',
+  'pl.applicationteamenroller.rs.contained.petition' => 'Application Team Enroller suspended the enrollee: no invitation is bound to this petition',
 
   // Decision emails to the researcher (R36): application, CO, research
   // teams. The decider's comment is never included.

@@ -104,6 +104,10 @@ class ApplicationTeamEnroller extends AppModel {
    */
 
   public function getAvailableJobs() {
-    return array();
+    // JobShell runs each as ApplicationTeamEnroller.<name>, the model
+    // <name>Job (KTD14)
+    return array(
+      'ExpireInvitations' => _txt('pl.applicationteamenroller.job.expire_invitations')
+    );
   }
 }

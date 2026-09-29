@@ -159,7 +159,12 @@ echo "==> Verifying the suite ran the expected number of tests..."
 #       left unbound, expiry after binding, existing member next time,
 #       abandonment, retiring an earlier petition, continuing newcomers,
 #       login switch at finalize, no usable flow, a flow without a role).
-min_tests_run=216
+#  227  U11 -- ExpireInvitationsJobTest (JobShell registration, expiry with one
+#       inviter notice, no second notice, pending_decision untouched, the
+#       answer-between-read-and-update race, the bound-petition grace window
+#       and retirement, containment of a done: bypass, a bound newcomer never
+#       suspended, requeue, App.base).
+min_tests_run=227
 tests_run="$(sed -n 's/^\([0-9][0-9]*\) tests run, [0-9][0-9]* failed\.$/\1/p' \
   <<< "$suite_tail" | head -n 1)"
 if [ -z "$tests_run" ]; then

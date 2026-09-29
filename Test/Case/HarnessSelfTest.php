@@ -56,15 +56,15 @@ class HarnessSelfTest extends AteTestCase {
   }
 
   /**
-   * No jobs yet (U11 adds expiry). U4: the CO configuration page links the
+   * U11: one job, the expiry job. U4: the CO configuration page links the
    * applications, research teams, and settings screens, and only those. U6:
    * the CO main menu links composing an invitation and the invitation list;
    * U10 adds the decision queue; and only those.
    */
-  public function testPluginDeclaresNoJobsYetAndItsMenus() {
+  public function testPluginDeclaresItsJobAndMenus() {
     $model = $this->model('ApplicationTeamEnroller.ApplicationTeamEnroller');
 
-    $this->assertEqual(array(), $model->getAvailableJobs());
+    $this->assertEqual(array('ExpireInvitations'), array_keys($model->getAvailableJobs()));
 
     $menus = $model->cmPluginMenus();
     $keys = array_keys($menus);
