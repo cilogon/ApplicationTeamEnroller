@@ -41,7 +41,7 @@ class AteConfigControllersTest extends AteTestCase {
 
   // Harness class => array(controller, actions an administrator may use)
   private $controllers = array(
-    'AteConfigApplicationsHarness' => array('ate_applications', array('add', 'edit', 'index', 'view')),
+    'AteConfigApplicationsHarness' => array('ate_applications', array('add', 'edit', 'index', 'view', 'resync')),
     'AteConfigResearchTeamsHarness' => array('ate_research_teams', array('add', 'edit', 'index', 'view')),
     'AteConfigApplicationTeamsHarness' => array('ate_application_teams', array('add', 'delete')),
     'AteConfigSettingsHarness' => array('ate_settings', array('edit', 'index', 'view'))
@@ -85,7 +85,7 @@ class AteConfigControllersTest extends AteTestCase {
    */
   public function testNonAdminIsDeniedEveryConfigurationAction() {
     $member = array('comember' => true, 'user' => true, 'copersonid' => 1);
-    $every = array('add', 'edit', 'index', 'view', 'delete', 'search', 'order');
+    $every = array('add', 'edit', 'index', 'view', 'delete', 'search', 'order', 'resync');
 
     foreach($this->controllers as $class => $cfg) {
       foreach($every as $action) {

@@ -57,6 +57,15 @@ $cm_application_team_enroller_texts['en_US'] = array(
   'pl.applicationteamenroller.application.teams.add' => 'Authorize Research Team',
   'pl.applicationteamenroller.application.teams.none_available' => 'There are no active research teams left to authorize. Designate a group as a research team first.',
 
+  // Access groups (KTD10)
+  'pl.applicationteamenroller.access_group.desc' => 'Login access to application %1$s. Maintained by the Application Team Enroller plugin; do not edit.',
+  'pl.applicationteamenroller.application.resync' => 'Resync Access Group',
+  'pl.applicationteamenroller.application.resync.desc' => 'Nest every authorized research team in the access group and remove any other nested group.',
+  'pl.applicationteamenroller.rs.resync.created' => 'Created the access group.',
+  'pl.applicationteamenroller.rs.resync.added' => 'Nested in the access group: %1$s.',
+  'pl.applicationteamenroller.rs.resync.removed' => 'Removed from the access group: %1$s.',
+  'pl.applicationteamenroller.rs.resync.none' => 'The access group already matches the authorized research teams.',
+
   // Research team fields
   'pl.applicationteamenroller.fd.research_team.co_group_id' => 'Group',
   'pl.applicationteamenroller.fd.research_team.co_group_id.desc' => 'An existing standard group of this CO. Team membership is membership in this group. It cannot be changed after the team is created.',
@@ -103,6 +112,7 @@ The link can be used for one response and expires on (@EXPIRES).
   'pl.applicationteamenroller.er.research_team.group' => 'This group cannot be a research team. Choose a standard group of this CO that is not already a research team or an application access group.',
   'pl.applicationteamenroller.er.application_team.team' => 'Only an active research team of this CO can be authorized for an application.',
   'pl.applicationteamenroller.er.application_team.application' => 'The application was not found in this CO.',
+  'pl.applicationteamenroller.er.access_group.deleted' => 'The access group of this application has been deleted in Registry, so it cannot be resynchronized.',
 
   // Newcomer enrollment flow checks. Each names one problem, so the
   // administrator knows what to change on the flow.

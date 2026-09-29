@@ -88,6 +88,23 @@ class AteFixtures {
     return $row;
   }
 
+  /**
+   * Run a SELECT and return its rows as flat column => value arrays. Like
+   * scalar(), it flushes the query cache first.
+   */
+  public function rows($sql) {
+    $this->db->flushQueryCache();
+    $ret = array();
+    foreach((array)$this->db->query($sql) as $row) {
+      $flat = array();
+      foreach($row as $part) {
+        $flat = array_merge($flat, (array)$part);
+      }
+      $ret[] = $flat;
+    }
+    return $ret;
+  }
+
   /** Convenience: count rows matching a WHERE clause. */
   public function count($table, $where) {
     return (int)$this->scalar('SELECT COUNT(*) AS c FROM ' . $table . ' WHERE ' . $where);
@@ -164,6 +181,25 @@ class AteFixtures {
       'owner' => false,
       'deleted' => false,
       'co_group_member_id' => null
+    ));
+  }
+
+  /**
+   * Seed a nesting of group $groupId into group $targetGroupId, directly in
+   * the database: Registry's CoGroupNesting callbacks do not run, so no
+   * derived membership is reconciled. $overrides sets or adds columns.
+   *
+   * co_group_nesting_id is the ChangelogBehavior self-reference and must be
+   * NULL for a current (non-historical) row.
+   */
+  public function nesting($groupId, $targetGroupId, $overrides = array()) {
+    return $this->insert('cm_co_group_nestings', $overrides + array(
+      'co_group_id' => $groupId,
+      'target_co_group_id' => $targetGroupId,
+      'negate' => false,
+      'revision' => 0,
+      'deleted' => false,
+      'co_group_nesting_id' => null
     ));
   }
 
@@ -295,6 +331,11 @@ class AteFixtures {
    * the COs, including rows the code under test created and
    * ChangelogBehavior archive copies, children before parents.
    *
+   * It also removes the CO's groups and the Registry rows that hang off them
+   * (nestings, memberships, identifiers, history records), because the
+   * plugin creates an access group for every application (KTD10) and
+   * Registry derives memberships and history from its nestings.
+   *
    * Pass every CO a test seeded in one call. The map is keyed by table, so
    * array_merge() of two maps keeps only the second CO's clauses.
    *
@@ -307,6 +348,7 @@ class AteFixtures {
     $req = 'SELECT id FROM cm_ate_enrollment_requests WHERE ate_invitation_id IN (' . $inv . ')';
     $app = 'SELECT id FROM cm_ate_applications WHERE co_id IN (' . $cos . ')';
     $grp = 'SELECT id FROM cm_co_groups WHERE co_id IN (' . $cos . ')';
+    $ppl = 'SELECT id FROM cm_co_people WHERE co_id IN (' . $cos . ')';
 
     return array(
       'cm_ate_enrollment_request_teams' => 'ate_enrollment_request_id IN (' . $req . ')',
@@ -315,7 +357,12 @@ class AteFixtures {
       'cm_ate_application_teams' => 'ate_application_id IN (' . $app . ')',
       'cm_ate_applications' => 'co_id IN (' . $cos . ')',
       'cm_ate_research_teams' => 'co_group_id IN (' . $grp . ')',
-      'cm_ate_settings' => 'co_id IN (' . $cos . ')'
+      'cm_ate_settings' => 'co_id IN (' . $cos . ')',
+      'cm_history_records' => 'co_group_id IN (' . $grp . ') OR co_person_id IN (' . $ppl . ')',
+      'cm_co_group_members' => 'co_group_id IN (' . $grp . ')',
+      'cm_co_group_nestings' => 'co_group_id IN (' . $grp . ') OR target_co_group_id IN (' . $grp . ')',
+      'cm_identifiers' => 'co_group_id IN (' . $grp . ')',
+      'cm_co_groups' => 'co_id IN (' . $cos . ')'
     );
   }
 

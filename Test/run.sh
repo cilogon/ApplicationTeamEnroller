@@ -132,7 +132,9 @@ echo "==> Verifying the suite ran the expected number of tests..."
 #       AteResearchTeamTest, AteApplicationTeamTest, AteSettingsControllerTest
 #       and AteConfigControllersTest (configuration permissions, pickers,
 #       in-place edits, and creating an application, teams, and mapping).
-min_tests_run=81
+#   93  U5 -- AccessGroupTest (access group creation and naming, nesting
+#       and derived membership following the mapping, resync, and retiring).
+min_tests_run=93
 tests_run="$(sed -n 's/^\([0-9][0-9]*\) tests run, [0-9][0-9]* failed\.$/\1/p' \
   <<< "$suite_tail" | head -n 1)"
 if [ -z "$tests_run" ]; then

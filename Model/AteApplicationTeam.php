@@ -58,6 +58,64 @@ class AteApplicationTeam extends ApplicationTeamEnrollerAppModel {
     )
   );
 
+  // The row as it was before an edit, for afterSave()
+  protected $priorMapping = null;
+
+  /**
+   * Callback after a delete: the team's group leaves the application's
+   * access group (KTD10). ChangelogBehavior only flags the row as deleted,
+   * and AppModel::delete() fires this callback after it, so the row can still
+   * be read here.
+   *
+   * @since  COmanage Registry v4.6.0
+   */
+
+  public function afterDelete() {
+    $this->syncNestingFor($this->mappingRow($this->id));
+  }
+
+  /**
+   * Callback after a save: nest the team's group into the application's
+   * access group (KTD10). An edit leaves an archived copy of the old row
+   * behind, so the old team's nesting is checked against the current
+   * mapping as well.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Boolean $created True if a new row was saved
+   * @param  Array   $options Save options
+   * @return Boolean          True
+   */
+
+  public function afterSave($created, $options = array()) {
+    $current = $this->mappingRow($this->id);
+
+    $this->syncNestingFor($current);
+
+    if(!empty($this->priorMapping) && $this->priorMapping != $current) {
+      $this->syncNestingFor($this->priorMapping);
+    }
+
+    $this->priorMapping = null;
+
+    return true;
+  }
+
+  /**
+   * Callback before a save: on an edit, remember the row as it was.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Array   $options Save options
+   * @return Boolean          True to continue the save
+   */
+
+  public function beforeSave($options = array()) {
+    $this->priorMapping = !empty($this->data[$this->alias]['id'])
+                          ? $this->mappingRow($this->data[$this->alias]['id'])
+                          : null;
+
+    return parent::beforeSave($options);
+  }
+
   /**
    * The research teams that may be authorized for an application: active
    * teams whose group is a current group of the application's CO.
@@ -131,6 +189,54 @@ class AteApplicationTeam extends ApplicationTeamEnrollerAppModel {
     }
 
     return $coId;
+  }
+
+  /**
+   * A mapping row's application and its team's CoGroup, read directly so a
+   * deleted or archived row can still be read.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Integer $id AteApplicationTeam ID
+   * @return Array       'app' and 'group' IDs, or null if not found
+   */
+
+  protected function mappingRow($id) {
+    if(empty($id)) {
+      return null;
+    }
+
+    $row = $this->find('first', array(
+      'conditions' => array('AteApplicationTeam.id' => $id),
+      'fields' => array('AteApplicationTeam.ate_application_id', 'AteApplicationTeam.ate_research_team_id'),
+      'callbacks' => false,
+      'recursive' => -1
+    ));
+
+    if(empty($row['AteApplicationTeam']['ate_application_id'])) {
+      return null;
+    }
+
+    $groupId = $this->AteResearchTeam->field('co_group_id',
+                                             array('AteResearchTeam.id' => $row['AteApplicationTeam']['ate_research_team_id']));
+
+    return array(
+      'app'   => (int)$row['AteApplicationTeam']['ate_application_id'],
+      'group' => (int)$groupId
+    );
+  }
+
+  /**
+   * Bring the nesting of one team group in one application's access group in
+   * line with the current mapping.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Array $mapping As returned by mappingRow(), or null
+   */
+
+  protected function syncNestingFor($mapping) {
+    if(!empty($mapping['app']) && !empty($mapping['group'])) {
+      $this->AteApplication->syncAccessGroupNestings($mapping['app'], array($mapping['group']));
+    }
   }
 
   /**

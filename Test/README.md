@@ -110,13 +110,16 @@ retire unnoticed. `Test/Case/HarnessSelfTest.php` is the reference example.
 ## Fixtures
 
 Database-backed tests seed the rows they need with `Test/lib/AteFixtures.php`
-(`co()`, `person()`, `group()`, `member()`, or `insert()` for any table) and call
-`cleanup()` in `tearDown()`, which deletes every tracked row newest first.
+(`co()`, `person()`, `group()`, `member()`, `nesting()`, or `insert()` for any
+table) and call `cleanup()` in `tearDown()`, which deletes every tracked row
+newest first. `rows()` runs a SELECT and returns flat rows.
 `track()` registers a row the code under test created so cleanup removes it too.
 `pluginRowsFor()` builds the purge map for plugin rows the code under test
 created; pass every CO the test seeded in one call
 (`pluginRowsFor(array($coId, $otherCoId))`), because merging two maps keeps only
-the second CO's clauses.
+the second CO's clauses. The map also removes the COs' groups and the
+nestings, memberships, identifiers, and history records hanging off them,
+because creating an application creates its access group (KTD10).
 CakePHP 2.x's PHPUnit fixture machinery does not run on this stack.
 
 **Read-after-write.** CakePHP 2's `DboSource` caches every `SELECT` result

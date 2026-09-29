@@ -172,7 +172,8 @@
       ?>
     </div>
   </li>
-  <?php if(!empty($a['access_co_group_id'])): ?>
+  <?php if(!empty($a['access_co_group_id'])
+           || ($this->action == 'view' && !empty($permissions['resync']))): ?>
   <li>
     <div class="field-name">
       <div class="field-title">
@@ -182,11 +183,25 @@
     </div>
     <div class="field-info">
       <?php
-        print $this->Html->link($d['AccessCoGroup']['name'],
-                                array('plugin' => null,
-                                      'controller' => 'co_groups',
-                                      'action' => 'view',
-                                      $a['access_co_group_id']));
+        if(!empty($a['access_co_group_id']) && !empty($d['AccessCoGroup']['name'])) {
+          print $this->Html->link($d['AccessCoGroup']['name'],
+                                  array('plugin' => null,
+                                        'controller' => 'co_groups',
+                                        'action' => 'view',
+                                        $a['access_co_group_id']));
+        }
+
+        if($this->action == 'view' && !empty($permissions['resync'])) {
+          print '<div>';
+          print $this->Html->link(_txt('pl.applicationteamenroller.application.resync'),
+                                  array('plugin' => 'application_team_enroller',
+                                        'controller' => 'ate_applications',
+                                        'action' => 'resync',
+                                        $a['id']),
+                                  array('class' => 'reconcilebutton',
+                                        'title' => _txt('pl.applicationteamenroller.application.resync.desc')));
+          print '</div>';
+        }
       ?>
     </div>
   </li>

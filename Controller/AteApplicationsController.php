@@ -144,10 +144,97 @@ class AteApplicationsController extends StandardController {
     // research teams, through AteApplicationTeamsController.
     $p['view'] = $configure;
 
+    // Repair an application's access group (KTD10)?
+    $p['resync'] = $configure;
+
     $this->set('permissions', $p);
 
     // An action not listed above is denied.
     return !empty($p[$this->action]);
+  }
+
+  /**
+   * Repair an application's access group: create it if missing, nest every
+   * authorized team's group, and remove other nestings (KTD10). Reports what
+   * changed and returns to the application's page.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Integer $id AteApplication ID
+   */
+
+  public function resync($id) {
+    $args = array();
+    $args['conditions']['AteApplication.id'] = $id;
+    $args['conditions']['AteApplication.co_id'] = $this->cur_co['Co']['id'];
+    $args['conditions']['AteApplication.ate_application_id'] = null;
+    $args['conditions'][] = 'AteApplication.deleted IS NOT true';
+    $args['contain'] = false;
+
+    if(!$this->AteApplication->find('first', $args)) {
+      $this->Flash->set(_txt('er.notfound', array(_txt('ct.ate_applications.1'), filter_var($id, FILTER_SANITIZE_SPECIAL_CHARS))),
+                        array('key' => 'error'));
+      $this->redirect(array(
+        'plugin'     => 'application_team_enroller',
+        'controller' => 'ate_applications',
+        'action'     => 'index',
+        'co'         => $this->cur_co['Co']['id']
+      ));
+    }
+
+    try {
+      $report = $this->AteApplication->resyncAccessGroup($id);
+
+      $msgs = array();
+
+      if($report['created']) {
+        $msgs[] = _txt('pl.applicationteamenroller.rs.resync.created');
+      }
+      if(!empty($report['added'])) {
+        $msgs[] = _txt('pl.applicationteamenroller.rs.resync.added', array($this->groupNames($report['added'])));
+      }
+      if(!empty($report['removed'])) {
+        $msgs[] = _txt('pl.applicationteamenroller.rs.resync.removed', array($this->groupNames($report['removed'])));
+      }
+      if(empty($msgs)) {
+        $msgs[] = _txt('pl.applicationteamenroller.rs.resync.none');
+      }
+
+      $this->Flash->set(filter_var(implode(' ', $msgs), FILTER_SANITIZE_SPECIAL_CHARS), array('key' => 'success'));
+    }
+    catch(Exception $e) {
+      $this->Flash->set(filter_var($e->getMessage(), FILTER_SANITIZE_SPECIAL_CHARS), array('key' => 'error'));
+    }
+
+    $this->redirect(array(
+      'plugin'     => 'application_team_enroller',
+      'controller' => 'ate_applications',
+      'action'     => 'view',
+      $id
+    ));
+  }
+
+  /**
+   * The names of CoGroups, for a report.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Array  $groupIds CoGroup IDs
+   * @return String           Comma-separated group names
+   */
+
+  protected function groupNames($groupIds) {
+    $args = array();
+    $args['conditions']['AccessCoGroup.id'] = $groupIds;
+    $args['fields'] = array('AccessCoGroup.id', 'AccessCoGroup.name');
+    $args['contain'] = false;
+
+    $names = $this->AteApplication->AccessCoGroup->find('list', $args);
+    $ret = array();
+
+    foreach($groupIds as $gid) {
+      $ret[] = isset($names[$gid]) ? $names[$gid] : $gid;
+    }
+
+    return implode(', ', $ret);
   }
 
   /**
