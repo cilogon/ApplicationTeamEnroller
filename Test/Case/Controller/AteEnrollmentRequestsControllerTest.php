@@ -33,6 +33,9 @@ class AteEnrollmentRequestsControllerTest extends AteEngineTestCase {
                                             array('group_type' => 'A'));
     $this->fx->member($this->g['coadmins'], $this->p['coAdmin']);
 
+    // stranger is P3, a plain CO member with no admin or approver role.
+    $this->p['stranger'] = $this->p['p3'];
+
     AteRecordingTransport::reset();
   }
 
