@@ -291,5 +291,6 @@ If you have questions, please contact the person who invited you.',
   'pl.applicationteamenroller.er.newcomer_flow.approval' => 'The newcomer enrollment flow must not require approval (turn off Require Approval For Enrollment).',
   'pl.applicationteamenroller.er.newcomer_flow.verification' => 'The newcomer enrollment flow must not confirm email addresses (set Email Confirmation Mode to "None").',
   'pl.applicationteamenroller.er.newcomer_flow.match' => 'The newcomer enrollment flow must not use the Self or Select Identity Matching policy.',
+  'pl.applicationteamenroller.er.newcomer_flow.role' => 'The newcomer enrollment flow must collect a CO Person Role attribute (for example Affiliation), because Registry makes a new CO Person Active only through a CO Person Role.',
   'pl.applicationteamenroller.er.newcomer_flow.wedge' => 'The newcomer enrollment flow must have an active Application Team Enroller wedge attached.'
 );

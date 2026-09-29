@@ -5,9 +5,10 @@
  *
  * U4: the newcomer enrollment flow must meet the Planning Contract's
  * Assumptions (same CO, AuthUser, no approval, no email verification, match
- * policy not Self or Select, this plugin's wedge attached). The check is
- * AteSetting::newcomerFlowProblem(), used by the field's validation rule, so
- * it is tested here without a controller or a rendered page.
+ * policy not Self or Select, a CO Person Role attribute, this plugin's wedge
+ * attached). The check is AteSetting::newcomerFlowProblem(), used by the
+ * field's validation rule, so it is tested here without a controller or a
+ * rendered page.
  */
 
 class AteSettingTest extends AteTestCase {
@@ -227,6 +228,67 @@ class AteSettingTest extends AteTestCase {
 
     $flowId = $this->newcomerFlow($this->coId, array('email_verification_mode' => null));
     $this->assertNull($Setting->newcomerFlowProblem($this->coId, $flowId), 'unset verification mode');
+  }
+
+  /**
+   * Registry activates a new CoPerson only through a CO Person Role, which a
+   * petition creates only from role ("r:") attributes, so the flow must
+   * collect one. No attributes, only CO Person attributes, a Not Permitted
+   * role attribute, a deleted one, or an archived copy is rejected; any
+   * current optional or required role attribute is accepted.
+   */
+  public function testNewcomerFlowNeedsRoleAttribute() {
+    $Setting = $this->model('ApplicationTeamEnroller.AteSetting');
+    $expected = _txt('pl.applicationteamenroller.er.newcomer_flow.role');
+
+    $rejected = array(
+      'no attributes' => array(),
+      'person name only' => array(array('attribute' => 'p:name:official', 'label' => 'Name', 'required' => 1)),
+      'not permitted' => array(array('required' => -1)),
+      'deleted' => array(array('deleted' => true)),
+      'archived copy' => 'archived'
+    );
+
+    foreach($rejected as $label => $attrs) {
+      $flowId = $this->fx->flow($this->coId, AteFixtures::tag('ate-u4-flow'), array(), false);
+      $this->fx->wedge($flowId);
+
+      if($attrs === 'archived') {
+        $parent = $this->fx->enrollmentAttribute($flowId, array('deleted' => true));
+        $this->fx->enrollmentAttribute($flowId, array('co_enrollment_attribute_id' => $parent));
+      } else {
+        foreach($attrs as $a) {
+          $this->fx->enrollmentAttribute($flowId, $a);
+        }
+      }
+
+      $this->assertEqual($expected, $Setting->newcomerFlowProblem($this->coId, $flowId), $label);
+    }
+
+    $accepted = array(
+      'optional affiliation' => array(),
+      'required title' => array('attribute' => 'r:title', 'label' => 'Title', 'required' => 1)
+    );
+
+    foreach($accepted as $label => $a) {
+      $flowId = $this->fx->flow($this->coId, AteFixtures::tag('ate-u4-flow'), array(), false);
+      $this->fx->wedge($flowId);
+      $this->fx->enrollmentAttribute($flowId, $a);
+
+      $this->assertNull($Setting->newcomerFlowProblem($this->coId, $flowId), $label);
+    }
+
+    // The save's validation error names the problem
+    $flowId = $this->fx->flow($this->coId, AteFixtures::tag('ate-u4-flow'), array(), false);
+    $this->fx->wedge($flowId);
+
+    $row = $Setting->getOrCreateForCo($this->coId);
+    $Setting->clear();
+    $this->assertFalse($Setting->save(array('id' => $row['AteSetting']['id'],
+                                            'co_id' => $this->coId,
+                                            'invitation_lifetime_days' => 14,
+                                            'newcomer_co_enrollment_flow_id' => $flowId)));
+    $this->assertEqual(array($expected), $Setting->validationErrors['newcomer_co_enrollment_flow_id']);
   }
 
   /**

@@ -206,13 +206,15 @@ class AteFixtures {
   /**
    * Seed an enrollment flow in $coId that qualifies as the newcomer flow
    * (U4): any authenticated user, no approval, no email verification, no
-   * Self or Select match policy. $overrides sets or adds columns.
+   * Self or Select match policy, and (unless $roleAttribute is false) a CO
+   * Person Role affiliation attribute, without which Registry leaves a new
+   * CoPerson Pending. $overrides sets or adds columns.
    *
    * co_enrollment_flow_id is the ChangelogBehavior self-reference and must be
    * NULL for a current (non-historical) row.
    */
-  public function flow($coId, $name, $overrides = array()) {
-    return $this->insert('cm_co_enrollment_flows', $overrides + array(
+  public function flow($coId, $name, $overrides = array(), $roleAttribute = true) {
+    $flowId = $this->insert('cm_co_enrollment_flows', $overrides + array(
       'co_id' => $coId,
       'name' => $name,
       'status' => 'A',
@@ -223,6 +225,36 @@ class AteFixtures {
       'revision' => 0,
       'deleted' => false,
       'co_enrollment_flow_id' => null
+    ));
+
+    if($roleAttribute) {
+      $this->enrollmentAttribute($flowId);
+    }
+
+    return $flowId;
+  }
+
+  /**
+   * Seed an enrollment attribute on $flowId, by default an optional CO Person
+   * Role affiliation ("r:affiliation"). $overrides sets or adds columns.
+   *
+   * co_enrollment_attribute_id is the ChangelogBehavior self-reference and
+   * must be NULL for a current (non-historical) row.
+   */
+  public function enrollmentAttribute($flowId, $overrides = array()) {
+    return $this->insert('cm_co_enrollment_attributes', $overrides + array(
+      'co_enrollment_flow_id' => $flowId,
+      'label' => 'Affiliation',
+      'attribute' => 'r:affiliation',
+      'required' => 0,
+      'ordr' => 1,
+      'hidden' => false,
+      'copy_to_coperson' => false,
+      'ignore_authoritative' => false,
+      'login' => false,
+      'revision' => 0,
+      'deleted' => false,
+      'co_enrollment_attribute_id' => null
     ));
   }
 

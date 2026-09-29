@@ -196,7 +196,9 @@ class AteSetting extends ApplicationTeamEnrollerAppModel {
    * Contract Assumptions, KTD11): it belongs to the CO, is authorized for any
    * authenticated user, requires no approval and no email verification, uses
    * a match policy other than Self or Select (either would run selectEnrollee
-   * before petitionerAttributes), and carries an active wedge of this plugin.
+   * before petitionerAttributes), collects a CO Person Role attribute (so
+   * finalize makes the new CoPerson Active), and carries an active wedge of
+   * this plugin.
    * Unset approval, verification, and match fields count as off, as Registry
    * treats them.
    *
@@ -243,6 +245,22 @@ class AteSetting extends ApplicationTeamEnrollerAppModel {
     if(in_array($f['match_policy'], array(EnrollmentMatchPolicyEnum::Self,
                                           EnrollmentMatchPolicyEnum::Select), true)) {
       return _txt('pl.applicationteamenroller.er.newcomer_flow.match');
+    }
+
+    // Registry makes a new CoPerson Active only through a CO Person Role
+    // (CoPetition::updateStatus()), and a petition creates a role only from
+    // role ("r:") attributes. Not Permitted attributes are left off the form.
+    // Changelog filters this search to current, undeleted attributes.
+    $Attribute = ClassRegistry::init('CoEnrollmentAttribute');
+
+    $args = array();
+    $args['conditions']['CoEnrollmentAttribute.co_enrollment_flow_id'] = $flowId;
+    $args['conditions']['CoEnrollmentAttribute.attribute LIKE'] = 'r:%';
+    $args['conditions']['CoEnrollmentAttribute.required !='] = RequiredEnum::NotPermitted;
+    $args['contain'] = false;
+
+    if($Attribute->find('count', $args) < 1) {
+      return _txt('pl.applicationteamenroller.er.newcomer_flow.role');
     }
 
     // Changelog filters this search to current, undeleted wedges.

@@ -150,6 +150,21 @@ class AteSettingsControllerTest extends AteTestCase {
   }
 
   /**
+   * A flow that collects no CO Person Role attribute is rejected: Registry
+   * would leave the new CoPerson Pending.
+   */
+  public function testEditRejectsFlowWithoutRoleAttribute() {
+    $flowId = $this->fx->flow($this->coId, AteFixtures::tag('ate-u4-flow'), array(), false);
+    $this->fx->wedge($flowId);
+
+    $h = $this->postEdit($flowId);
+
+    $this->assertTrue($this->flashed($h, _txt('pl.applicationteamenroller.er.newcomer_flow.role')),
+      json_encode($h->Flash->messages));
+    $this->assertNull($this->current($this->coId, 'newcomer_co_enrollment_flow_id'));
+  }
+
+  /**
    * A qualifying flow saves, in place: one current row, still for this CO
    * even when the form claims another CO.
    */

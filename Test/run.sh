@@ -159,7 +159,7 @@ echo "==> Verifying the suite ran the expected number of tests..."
 #       left unbound, expiry after binding, existing member next time,
 #       abandonment, retiring an earlier petition, continuing newcomers,
 #       login switch at finalize, no usable flow, a flow without a role).
-min_tests_run=214
+min_tests_run=216
 tests_run="$(sed -n 's/^\([0-9][0-9]*\) tests run, [0-9][0-9]* failed\.$/\1/p' \
   <<< "$suite_tail" | head -n 1)"
 if [ -z "$tests_run" ]; then

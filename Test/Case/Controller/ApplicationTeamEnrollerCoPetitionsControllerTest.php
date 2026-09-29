@@ -18,8 +18,8 @@
  * approval and no email confirmation, match policy None, no Org Identity
  * Source, and asks for a CO Person name and a CO Person Role affiliation.
  * Core's updateStatus() activates a CoPerson only through a role, so a flow
- * without a role attribute leaves the new CoPerson Pending (see
- * testFlowWithoutRoleLeavesPersonPending).
+ * without a role attribute would leave the new CoPerson Pending; the plugin
+ * refuses such a flow (see testFlowWithoutRoleIsRefused).
  *
  * Engine world (Test/lib/AteEngineTestCase.php):
  *   A  approval required   teams T1, T2
@@ -196,7 +196,7 @@ class ApplicationTeamEnrollerCoPetitionsControllerTest extends AteEngineTestCase
    * Role affiliation, so finalize activates the new CoPerson.
    */
   private function newcomerFlow($role) {
-    $flow = $this->fx->flow($this->coId, 'Newcomer ' . AteFixtures::tag('flow'));
+    $flow = $this->fx->flow($this->coId, 'Newcomer ' . AteFixtures::tag('flow'), array(), false);
     $this->wedgeId = $this->fx->wedge($flow);
 
     $attr = array(
@@ -975,11 +975,17 @@ class ApplicationTeamEnrollerCoPetitionsControllerTest extends AteEngineTestCase
   }
 
   /**
-   * Registry activates a new CoPerson only through a CO Person Role, so a
-   * flow that collects no role attribute leaves the newcomer Pending even
-   * after finalize. The plugin still commits; the README asks for a role.
+   * Registry activates a new CoPerson only through a CO Person Role:
+   * CoPetition::updateStatus() sets the Active status on finalize by saving
+   * the petition's role, and CoPersonRole's afterSave recalculates the
+   * CoPerson from its roles. A petition creates a role only from role ("r:")
+   * attributes, so a flow that collects none finalizes with the new CoPerson
+   * left Pending forever. The plugin therefore refuses such a flow as the
+   * newcomer flow (AteSetting::newcomerFlowProblem()): even if the setting
+   * already names it, the researcher gets the newcomer_unavailable
+   * explanation, the draft stays saved, and no petition or CoPerson is made.
    */
-  public function testFlowWithoutRoleLeavesPersonPending() {
+  public function testFlowWithoutRoleIsRefused() {
     $this->flowId = $this->newcomerFlow(false);
     $this->fx->query('UPDATE cm_ate_settings SET newcomer_co_enrollment_flow_id = ' . (int)$this->flowId
                      . ' WHERE co_id = ' . (int)$this->coId);
@@ -988,12 +994,13 @@ class ApplicationTeamEnrollerCoPetitionsControllerTest extends AteEngineTestCase
     $this->loginAs($this->sub('no-role'), array(self::Invited));
     $before = $this->maxPersonId();
 
-    $this->completeRun($inv, array('A' => true));
+    $h = $this->respondTo($inv, array('A' => true));
 
-    $people = $this->newPeople($before);
-    $this->assertEqual(1, count($people), 'one CoPerson');
-    $this->assertEqual('P', $people[0]['status'], 'left Pending by core');
-    $this->assertEqual('F', $this->petitions()[0]['status'], 'although the petition is Finalized');
-    $this->assertEqual('responded', $this->invStatus($inv), 'the response is committed');
+    $this->assertEqual('explanation', $h->view, 'explanation page');
+    $this->assertEqual('newcomer_unavailable', $h->viewVars['vv_reason'], 'role-less flow refused');
+    $this->assertTrue((bool)$this->requestRow($inv['req']['A'])['draft_choice'], 'draft saved');
+    $this->assertEqual('sent', $this->invStatus($inv), 'invitation still sent');
+    $this->assertEqual(array(), $this->petitions(), 'no petition');
+    $this->assertEqual(array(), $this->newPeople($before), 'no CoPerson');
   }
 }
