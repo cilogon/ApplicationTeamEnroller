@@ -34,6 +34,8 @@
 App::uses('CakeRequest', 'Network');
 App::uses('CakeResponse', 'Network');
 App::uses('ConnectionManager', 'Model');
+App::uses('ComponentCollection', 'Controller');
+App::uses('AteAuthzComponent', 'ApplicationTeamEnroller.Controller/Component');
 
 /**
  * Thrown by the harness' redirect() so the driven action stops exactly where
@@ -119,6 +121,11 @@ trait AteControllerHarness {
   public $Flash = null;
   public $Role = null;
 
+  // The plugin's authorization component (U3). Configuration controllers
+  // answer isAuthorized() through it; the harness supplies a real one, which
+  // decides from the role stub's roles.
+  public $AteAuthz = null;
+
   /** @var mixed The url of the last recorded redirect, or null if none. */
   public $harnessRedirect = null;
 
@@ -150,6 +157,13 @@ trait AteControllerHarness {
 
     $harness->Flash = new AteHarnessFlash();
     $harness->Role = new AteHarnessRole($roles);
+    $harness->AteAuthz = new AteAuthzComponent(new ComponentCollection());
+
+    // The dispatcher's request carries the plugin when the controller is
+    // constructed, and Controller::setRequest() copies it here. The harness
+    // builds with a bare request, so set it the same way: lazy model loading
+    // (Controller::__isset) needs it to find the plugin's model.
+    $harness->plugin = 'ApplicationTeamEnroller';
 
     $harness->request->params['plugin'] = 'application_team_enroller';
     $harness->request->params['controller'] = $controller;

@@ -72,15 +72,29 @@ class AteApplication extends ApplicationTeamEnrollerAppModel {
       'required' => false,
       'allowEmpty' => true
     ),
+    // The admin and approver groups are existing groups of the
+    // application's CO, and may be the same group (R4)
     'admin_co_group_id' => array(
-      'rule' => 'numeric',
-      'required' => false,
-      'allowEmpty' => true
+      'numeric' => array(
+        'rule' => 'numeric',
+        'required' => true,
+        'allowEmpty' => false,
+        'last' => true
+      ),
+      'co' => array(
+        'rule' => array('validateCoGroup')
+      )
     ),
     'approver_co_group_id' => array(
-      'rule' => 'numeric',
-      'required' => false,
-      'allowEmpty' => true
+      'numeric' => array(
+        'rule' => 'numeric',
+        'required' => true,
+        'allowEmpty' => false,
+        'last' => true
+      ),
+      'co' => array(
+        'rule' => array('validateCoGroup')
+      )
     ),
     'access_co_group_id' => array(
       'rule' => 'numeric',
@@ -98,4 +112,56 @@ class AteApplication extends ApplicationTeamEnrollerAppModel {
       'allowEmpty' => false
     )
   );
+
+  /**
+   * The groups of a CO, for the admin and approver group pickers.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Integer $coId CO ID
+   * @return Array         Group names, keyed by CoGroup ID
+   */
+
+  public function availableGroups($coId) {
+    $args = array();
+    $args['conditions']['AdminCoGroup.co_id'] = $coId;
+    $args['order'] = 'AdminCoGroup.name ASC';
+    $args['contain'] = false;
+
+    return $this->AdminCoGroup->find('list', $args);
+  }
+
+  /**
+   * Validate that a group is a current group of the application's CO.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Array $check Field being validated
+   * @return Mixed        True if valid, otherwise an error message
+   */
+
+  public function validateCoGroup($check) {
+    $coId = isset($this->data[$this->alias]['co_id']) ? $this->data[$this->alias]['co_id'] : null;
+
+    if(empty($coId)) {
+      $id = !empty($this->data[$this->alias]['id']) ? $this->data[$this->alias]['id'] : $this->id;
+
+      if(!empty($id)) {
+        $coId = $this->field('co_id', array($this->alias . '.id' => $id));
+      }
+    }
+
+    // Changelog does not filter a lookup by id, so exclude deleted and
+    // archived groups here.
+    $args = array();
+    $args['conditions']['AdminCoGroup.id'] = reset($check);
+    $args['conditions']['AdminCoGroup.co_id'] = $coId;
+    $args['conditions']['AdminCoGroup.co_group_id'] = null;
+    $args['conditions'][] = 'AdminCoGroup.deleted IS NOT true';
+    $args['contain'] = false;
+
+    if(empty($coId) || $this->AdminCoGroup->find('count', $args) < 1) {
+      return _txt('pl.applicationteamenroller.er.application.group');
+    }
+
+    return true;
+  }
 }

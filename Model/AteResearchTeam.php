@@ -65,6 +65,104 @@ class AteResearchTeam extends ApplicationTeamEnrollerAppModel {
   );
 
   /**
+   * Callback before a save: a team saved without a name takes its group's
+   * name, so lists and pickers always have one to show.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Array   $options Save options
+   * @return Boolean          True to continue the save
+   */
+
+  public function beforeSave($options = array()) {
+    if(empty($this->data[$this->alias]['name'])
+       && !empty($this->data[$this->alias]['co_group_id'])) {
+      $name = $this->CoGroup->field('name', array('CoGroup.id' => $this->data[$this->alias]['co_group_id']));
+
+      if($name) {
+        $this->data[$this->alias]['name'] = $name;
+      }
+    }
+
+    return parent::beforeSave($options);
+  }
+
+  /**
+   * The groups of a CO that may be designated as a research team (R2, R12):
+   * current, standard, non-automatic groups that are not already a research
+   * team and are not an application's access group. CO:admins, the approver
+   * groups, and the members groups are never offered.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Integer $coId CO ID
+   * @return Array         Group names, keyed by CoGroup ID
+   */
+
+  public function availableGroups($coId) {
+    // Groups that are already research teams (Changelog limits this search
+    // to current, undeleted teams)
+    $args = array();
+    $args['fields'] = array('AteResearchTeam.id', 'AteResearchTeam.co_group_id');
+    $args['contain'] = false;
+    $exclude = array_values($this->find('list', $args));
+
+    // Access groups the plugin maintains for applications (KTD10)
+    $Application = ClassRegistry::init('ApplicationTeamEnroller.AteApplication');
+
+    $args = array();
+    $args['conditions']['AteApplication.co_id'] = $coId;
+    $args['conditions'][] = 'AteApplication.access_co_group_id IS NOT NULL';
+    $args['fields'] = array('AteApplication.id', 'AteApplication.access_co_group_id');
+    $args['contain'] = false;
+    $exclude = array_merge($exclude, array_values($Application->find('list', $args)));
+
+    $args = array();
+    $args['conditions']['CoGroup.co_id'] = $coId;
+    $args['conditions']['CoGroup.group_type'] = GroupEnum::Standard;
+    $args['conditions'][] = 'CoGroup.auto IS NOT true';
+    if(!empty($exclude)) {
+      $args['conditions']['NOT']['CoGroup.id'] = array_map('intval', $exclude);
+    }
+    $args['order'] = 'CoGroup.name ASC';
+    $args['contain'] = false;
+
+    return $this->CoGroup->find('list', $args);
+  }
+
+  /**
+   * Determine whether a group may be designated as a research team of a CO,
+   * by the same rule as availableGroups().
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Integer $coId      CO ID
+   * @param  Integer $coGroupId CoGroup ID
+   * @return Boolean
+   */
+
+  public function isEligibleGroup($coId, $coGroupId) {
+    return array_key_exists((int)$coGroupId, $this->availableGroups($coId));
+  }
+
+  /**
+   * Find the CO of a research team, through its group.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Integer $id AteResearchTeam ID
+   * @return Integer     CO ID
+   * @throws InvalidArgumentException If the team or its group does not exist
+   */
+
+  public function findCoForRecord($id) {
+    $groupId = $this->field('co_group_id', array('AteResearchTeam.id' => $id));
+    $coId = $groupId ? $this->CoGroup->field('co_id', array('CoGroup.id' => $groupId)) : null;
+
+    if(!$coId) {
+      throw new InvalidArgumentException(_txt('er.notfound', array(_txt('ct.ate_research_teams.1'), $id)));
+    }
+
+    return $coId;
+  }
+
+  /**
    * Determine whether a research team's CoGroup has been deleted.
    *
    * Registry deletes CoGroups softly and leaves plugin foreign keys pointing

@@ -113,6 +113,10 @@ Database-backed tests seed the rows they need with `Test/lib/AteFixtures.php`
 (`co()`, `person()`, `group()`, `member()`, or `insert()` for any table) and call
 `cleanup()` in `tearDown()`, which deletes every tracked row newest first.
 `track()` registers a row the code under test created so cleanup removes it too.
+`pluginRowsFor()` builds the purge map for plugin rows the code under test
+created; pass every CO the test seeded in one call
+(`pluginRowsFor(array($coId, $otherCoId))`), because merging two maps keeps only
+the second CO's clauses.
 CakePHP 2.x's PHPUnit fixture machinery does not run on this stack.
 
 **Read-after-write.** CakePHP 2's `DboSource` caches every `SELECT` result
@@ -140,8 +144,12 @@ $h->harnessInvoke('edit', array($id), 'POST');
 
 The harness never calls `constructClasses()`. It supplies a flash recorder
 (`AteHarnessFlash`), a role stub (`AteHarnessRole`, which returns the role set
-you pass merged over Registry's defaults), and a `redirect()` that records its
-target and throws `AteHarnessRedirect`. Throwing matters: callers assume
+you pass merged over Registry's defaults), a real `AteAuthzComponent` for
+`isAuthorized()`, the plugin name (so the controller's model loads lazily, as
+under the dispatcher), and a `redirect()` that records its target and throws
+`AteHarnessRedirect`. `beforeFilter()` does not run, so `cur_co` is the CO you
+pass to `harnessBuild()`, and a Registry `StandardController` action (`add`,
+`edit`, `index`) runs against the real database. Throwing matters: callers assume
 `redirect()` ends the action, and the production `_stop()` would end the whole
 suite with a success status.
 

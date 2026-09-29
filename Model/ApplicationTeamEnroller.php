@@ -58,7 +58,23 @@ class ApplicationTeamEnroller extends AppModel {
    */
 
   public function cmPluginMenus() {
-    return array();
+    // CO configuration screens, for CO administrators (A4)
+    return array(
+      "coconfig" => array(
+        _txt('pl.applicationteamenroller.menu.applications') =>
+          array('icon'       => 'apps',
+                'controller' => 'ate_applications',
+                'action'     => 'index'),
+        _txt('pl.applicationteamenroller.menu.research_teams') =>
+          array('icon'       => 'group',
+                'controller' => 'ate_research_teams',
+                'action'     => 'index'),
+        _txt('pl.applicationteamenroller.menu.settings') =>
+          array('icon'       => 'tune',
+                'controller' => 'ate_settings',
+                'action'     => 'index')
+      )
+    );
   }
 
   /**

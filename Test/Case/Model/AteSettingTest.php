@@ -2,6 +2,12 @@
 /**
  * U2: per-CO settings (KTD2). The helper returns the CO's settings row and
  * creates it with persisted defaults on first use.
+ *
+ * U4: the newcomer enrollment flow must meet the Planning Contract's
+ * Assumptions (same CO, AuthUser, no approval, no email verification, match
+ * policy not Self or Select, this plugin's wedge attached). The check is
+ * AteSetting::newcomerFlowProblem(), used by the field's validation rule, so
+ * it is tested here without a controller or a rendered page.
  */
 
 class AteSettingTest extends AteTestCase {
@@ -119,5 +125,144 @@ class AteSettingTest extends AteTestCase {
                                             'invitation_lifetime_days' => 0)),
       'a zero-day lifetime must fail');
     $this->assertTrue(isset($Setting->validationErrors['invitation_lifetime_days']));
+  }
+
+  /**
+   * Seed a qualifying newcomer flow in $coId with this plugin's wedge, then
+   * apply $overrides to the flow. Returns the flow ID.
+   */
+  private function newcomerFlow($coId, $overrides = array()) {
+    $flowId = $this->fx->flow($coId, AteFixtures::tag('ate-u4-flow'), $overrides);
+    $this->fx->wedge($flowId);
+
+    return $flowId;
+  }
+
+  /**
+   * A qualifying flow has no problem and saves.
+   */
+  public function testQualifyingNewcomerFlowSaves() {
+    $Setting = $this->model('ApplicationTeamEnroller.AteSetting');
+    $flowId = $this->newcomerFlow($this->coId);
+
+    $this->assertNull($Setting->newcomerFlowProblem($this->coId, $flowId));
+
+    $row = $Setting->getOrCreateForCo($this->coId);
+    $Setting->clear();
+    $saved = $Setting->save(array('id' => $row['AteSetting']['id'],
+                                  'co_id' => $this->coId,
+                                  'invitation_lifetime_days' => 14,
+                                  'newcomer_co_enrollment_flow_id' => $flowId));
+    $this->assertNotEmpty($saved, 'a qualifying flow must save: ' . json_encode($Setting->validationErrors));
+  }
+
+  /**
+   * A flow that requires approval is rejected, and the save's validation
+   * error names that problem.
+   */
+  public function testNewcomerFlowRequiringApprovalIsRejected() {
+    $Setting = $this->model('ApplicationTeamEnroller.AteSetting');
+    $flowId = $this->newcomerFlow($this->coId, array('approval_required' => true));
+    $expected = _txt('pl.applicationteamenroller.er.newcomer_flow.approval');
+
+    $this->assertEqual($expected, $Setting->newcomerFlowProblem($this->coId, $flowId));
+
+    $row = $Setting->getOrCreateForCo($this->coId);
+    $Setting->clear();
+    $this->assertFalse($Setting->save(array('id' => $row['AteSetting']['id'],
+                                            'co_id' => $this->coId,
+                                            'invitation_lifetime_days' => 14,
+                                            'newcomer_co_enrollment_flow_id' => $flowId)));
+    $this->assertEqual(array($expected), $Setting->validationErrors['newcomer_co_enrollment_flow_id']);
+  }
+
+  /**
+   * A flow of another CO is rejected, even a flow that otherwise qualifies.
+   */
+  public function testNewcomerFlowFromAnotherCoIsRejected() {
+    $otherCoId = $this->fx->co(AteFixtures::tag('ate-u4-other'));
+    $flowId = $this->newcomerFlow($otherCoId);
+
+    $this->assertEqual(_txt('pl.applicationteamenroller.er.newcomer_flow.co'),
+      $this->model('ApplicationTeamEnroller.AteSetting')->newcomerFlowProblem($this->coId, $flowId));
+  }
+
+  /**
+   * A Self or Select match policy is rejected: selectEnrollee would then run
+   * before petitionerAttributes (KTD11). Other policies are accepted.
+   */
+  public function testNewcomerFlowMatchPolicySelfOrSelectIsRejected() {
+    $Setting = $this->model('ApplicationTeamEnroller.AteSetting');
+    $expected = _txt('pl.applicationteamenroller.er.newcomer_flow.match');
+
+    foreach(array('S', 'P') as $policy) {
+      $flowId = $this->newcomerFlow($this->coId, array('match_policy' => $policy));
+      $this->assertEqual($expected, $Setting->newcomerFlowProblem($this->coId, $flowId), "policy $policy");
+    }
+
+    foreach(array('N', 'A', 'E', null) as $policy) {
+      $flowId = $this->newcomerFlow($this->coId, array('match_policy' => $policy));
+      $this->assertNull($Setting->newcomerFlowProblem($this->coId, $flowId), 'policy ' . var_export($policy, true));
+    }
+  }
+
+  /**
+   * The flow must admit any authenticated user and must not verify email.
+   * An unset verification mode is treated as None, as Registry treats it.
+   */
+  public function testNewcomerFlowAuthzAndVerificationAreChecked() {
+    $Setting = $this->model('ApplicationTeamEnroller.AteSetting');
+
+    foreach(array('CP', 'CA', 'N') as $authz) {
+      $flowId = $this->newcomerFlow($this->coId, array('authz_level' => $authz));
+      $this->assertEqual(_txt('pl.applicationteamenroller.er.newcomer_flow.authz'),
+        $Setting->newcomerFlowProblem($this->coId, $flowId), "authz $authz");
+    }
+
+    foreach(array('A', 'R', 'V') as $mode) {
+      $flowId = $this->newcomerFlow($this->coId, array('email_verification_mode' => $mode));
+      $this->assertEqual(_txt('pl.applicationteamenroller.er.newcomer_flow.verification'),
+        $Setting->newcomerFlowProblem($this->coId, $flowId), "verification $mode");
+    }
+
+    $flowId = $this->newcomerFlow($this->coId, array('email_verification_mode' => null));
+    $this->assertNull($Setting->newcomerFlowProblem($this->coId, $flowId), 'unset verification mode');
+  }
+
+  /**
+   * The flow must carry an active wedge of this plugin: no wedge, another
+   * plugin's wedge, a suspended wedge, or a deleted wedge is rejected.
+   */
+  public function testNewcomerFlowNeedsThisPluginsActiveWedge() {
+    $Setting = $this->model('ApplicationTeamEnroller.AteSetting');
+    $expected = _txt('pl.applicationteamenroller.er.newcomer_flow.wedge');
+
+    $cases = array(
+      'no wedge' => null,
+      'other plugin' => array('plugin' => 'FiddleEnroller'),
+      'suspended' => array('status' => 'S'),
+      'deleted' => array('deleted' => true)
+    );
+
+    foreach($cases as $label => $wedge) {
+      $flowId = $this->fx->flow($this->coId, AteFixtures::tag('ate-u4-flow'));
+      if($wedge !== null) {
+        $this->fx->wedge($flowId, $wedge);
+      }
+      $this->assertEqual($expected, $Setting->newcomerFlowProblem($this->coId, $flowId), $label);
+    }
+  }
+
+  /**
+   * An unknown or deleted flow is rejected as not found.
+   */
+  public function testMissingOrDeletedNewcomerFlowIsRejected() {
+    $Setting = $this->model('ApplicationTeamEnroller.AteSetting');
+    $expected = _txt('pl.applicationteamenroller.er.newcomer_flow.notfound');
+
+    $this->assertEqual($expected, $Setting->newcomerFlowProblem($this->coId, 999999999));
+
+    $flowId = $this->newcomerFlow($this->coId, array('deleted' => true));
+    $this->assertEqual($expected, $Setting->newcomerFlowProblem($this->coId, $flowId));
   }
 }

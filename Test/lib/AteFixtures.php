@@ -168,6 +168,45 @@ class AteFixtures {
   }
 
   /**
+   * Seed an enrollment flow in $coId that qualifies as the newcomer flow
+   * (U4): any authenticated user, no approval, no email verification, no
+   * Self or Select match policy. $overrides sets or adds columns.
+   *
+   * co_enrollment_flow_id is the ChangelogBehavior self-reference and must be
+   * NULL for a current (non-historical) row.
+   */
+  public function flow($coId, $name, $overrides = array()) {
+    return $this->insert('cm_co_enrollment_flows', $overrides + array(
+      'co_id' => $coId,
+      'name' => $name,
+      'status' => 'A',
+      'authz_level' => 'AU',
+      'approval_required' => false,
+      'email_verification_mode' => 'X',
+      'match_policy' => 'N',
+      'revision' => 0,
+      'deleted' => false,
+      'co_enrollment_flow_id' => null
+    ));
+  }
+
+  /**
+   * Seed an enrollment flow wedge on $flowId, by default an active wedge of
+   * this plugin. $overrides sets or adds columns.
+   */
+  public function wedge($flowId, $overrides = array()) {
+    return $this->insert('cm_co_enrollment_flow_wedges', $overrides + array(
+      'co_enrollment_flow_id' => $flowId,
+      'description' => 'hermetic test wedge',
+      'plugin' => 'ApplicationTeamEnroller',
+      'status' => 'A',
+      'revision' => 0,
+      'deleted' => false,
+      'co_enrollment_flow_wedge_id' => null
+    ));
+  }
+
+  /**
    * Seed an application (cm_ate_applications) in $coId. $overrides sets or
    * adds columns, for example the admin, approver, or access group ids.
    *
@@ -253,27 +292,30 @@ class AteFixtures {
 
   /**
    * The cleanup() $alsoPurge map that removes every plugin row belonging to
-   * $coId, including rows the code under test created and ChangelogBehavior
-   * archive copies, children before parents.
+   * the COs, including rows the code under test created and
+   * ChangelogBehavior archive copies, children before parents.
    *
-   * @param  Integer $coId CO ID
-   * @return Array         table => WHERE clause
+   * Pass every CO a test seeded in one call. The map is keyed by table, so
+   * array_merge() of two maps keeps only the second CO's clauses.
+   *
+   * @param  Integer|Array $coIds CO ID, or a list of CO IDs
+   * @return Array                table => WHERE clause
    */
-  public function pluginRowsFor($coId) {
-    $coId = (int)$coId;
-    $inv = 'SELECT id FROM cm_ate_invitations WHERE co_id = ' . $coId;
+  public function pluginRowsFor($coIds) {
+    $cos = implode(', ', array_map('intval', (array)$coIds));
+    $inv = 'SELECT id FROM cm_ate_invitations WHERE co_id IN (' . $cos . ')';
     $req = 'SELECT id FROM cm_ate_enrollment_requests WHERE ate_invitation_id IN (' . $inv . ')';
-    $app = 'SELECT id FROM cm_ate_applications WHERE co_id = ' . $coId;
-    $grp = 'SELECT id FROM cm_co_groups WHERE co_id = ' . $coId;
+    $app = 'SELECT id FROM cm_ate_applications WHERE co_id IN (' . $cos . ')';
+    $grp = 'SELECT id FROM cm_co_groups WHERE co_id IN (' . $cos . ')';
 
     return array(
       'cm_ate_enrollment_request_teams' => 'ate_enrollment_request_id IN (' . $req . ')',
       'cm_ate_enrollment_requests' => 'ate_invitation_id IN (' . $inv . ')',
-      'cm_ate_invitations' => 'co_id = ' . $coId,
+      'cm_ate_invitations' => 'co_id IN (' . $cos . ')',
       'cm_ate_application_teams' => 'ate_application_id IN (' . $app . ')',
-      'cm_ate_applications' => 'co_id = ' . $coId,
+      'cm_ate_applications' => 'co_id IN (' . $cos . ')',
       'cm_ate_research_teams' => 'co_group_id IN (' . $grp . ')',
-      'cm_ate_settings' => 'co_id = ' . $coId
+      'cm_ate_settings' => 'co_id IN (' . $cos . ')'
     );
   }
 

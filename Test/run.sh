@@ -128,7 +128,11 @@ echo "==> Verifying the suite ran the expected number of tests..."
 #   50  U3 -- AteAuthzComponentTest (configure, invite, view, revoke and
 #       withdraw, respond, queue and list gates, and decider eligibility
 #       under KTD7 with the R39 exclusions).
-min_tests_run=50
+#   81  U4 -- AteSettingTest newcomer-flow checks, AteApplicationTest,
+#       AteResearchTeamTest, AteApplicationTeamTest, AteSettingsControllerTest
+#       and AteConfigControllersTest (configuration permissions, pickers,
+#       in-place edits, and creating an application, teams, and mapping).
+min_tests_run=81
 tests_run="$(sed -n 's/^\([0-9][0-9]*\) tests run, [0-9][0-9]* failed\.$/\1/p' \
   <<< "$suite_tail" | head -n 1)"
 if [ -z "$tests_run" ]; then

@@ -60,10 +60,20 @@ class AteSetting extends ApplicationTeamEnrollerAppModel {
       'required' => false,
       'allowEmpty' => true
     ),
+    // The flow must meet the newcomer-flow assumptions (U4), checked by
+    // newcomerFlowProblem()
     'newcomer_co_enrollment_flow_id' => array(
-      'rule' => 'numeric',
-      'required' => false,
-      'allowEmpty' => true
+      'numeric' => array(
+        'rule' => 'numeric',
+        'required' => false,
+        'allowEmpty' => true,
+        'last' => true
+      ),
+      'flow' => array(
+        'rule' => array('validateNewcomerFlow'),
+        'required' => false,
+        'allowEmpty' => true
+      )
     ),
     'email_env_vars' => array(
       'rule' => array('validateInput'),
@@ -159,6 +169,120 @@ class AteSetting extends ApplicationTeamEnrollerAppModel {
     $args['contain'] = false;
 
     return $this->find('first', $args);
+  }
+
+  /**
+   * The enrollment flows of a CO, for the newcomer flow picker.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Integer $coId CO ID
+   * @return Array         Flow names, keyed by CoEnrollmentFlow ID
+   */
+
+  public function availableFlows($coId) {
+    $args = array();
+    $args['conditions']['NewcomerCoEnrollmentFlow.co_id'] = $coId;
+    $args['order'] = 'NewcomerCoEnrollmentFlow.name ASC';
+    $args['contain'] = false;
+
+    return $this->NewcomerCoEnrollmentFlow->find('list', $args);
+  }
+
+  /**
+   * Check that an enrollment flow can serve as a CO's newcomer flow.
+   *
+   * The newcomer flow must admit the researcher's fresh login and hand them
+   * back to the plugin without a Registry decision in between (Planning
+   * Contract Assumptions, KTD11): it belongs to the CO, is authorized for any
+   * authenticated user, requires no approval and no email verification, uses
+   * a match policy other than Self or Select (either would run selectEnrollee
+   * before petitionerAttributes), and carries an active wedge of this plugin.
+   * Unset approval, verification, and match fields count as off, as Registry
+   * treats them.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Integer $coId   CO ID the settings belong to
+   * @param  Integer $flowId CoEnrollmentFlow ID
+   * @return String|null     A message naming the first problem found, or null if the flow qualifies
+   */
+
+  public function newcomerFlowProblem($coId, $flowId) {
+    // Changelog does not filter a lookup by id, so exclude deleted and
+    // archived rows here.
+    $args = array();
+    $args['conditions']['NewcomerCoEnrollmentFlow.id'] = $flowId;
+    $args['contain'] = false;
+
+    $flow = $this->NewcomerCoEnrollmentFlow->find('first', $args);
+
+    if(empty($flow['NewcomerCoEnrollmentFlow']['id'])
+       || !empty($flow['NewcomerCoEnrollmentFlow']['deleted'])
+       || !empty($flow['NewcomerCoEnrollmentFlow']['co_enrollment_flow_id'])) {
+      return _txt('pl.applicationteamenroller.er.newcomer_flow.notfound');
+    }
+
+    $f = $flow['NewcomerCoEnrollmentFlow'];
+
+    if((int)$f['co_id'] !== (int)$coId) {
+      return _txt('pl.applicationteamenroller.er.newcomer_flow.co');
+    }
+
+    if($f['authz_level'] !== EnrollmentAuthzEnum::AuthUser) {
+      return _txt('pl.applicationteamenroller.er.newcomer_flow.authz');
+    }
+
+    if(!empty($f['approval_required'])) {
+      return _txt('pl.applicationteamenroller.er.newcomer_flow.approval');
+    }
+
+    if(!empty($f['email_verification_mode'])
+       && $f['email_verification_mode'] !== VerificationModeEnum::None) {
+      return _txt('pl.applicationteamenroller.er.newcomer_flow.verification');
+    }
+
+    if(in_array($f['match_policy'], array(EnrollmentMatchPolicyEnum::Self,
+                                          EnrollmentMatchPolicyEnum::Select), true)) {
+      return _txt('pl.applicationteamenroller.er.newcomer_flow.match');
+    }
+
+    // Changelog filters this search to current, undeleted wedges.
+    $Wedge = ClassRegistry::init('CoEnrollmentFlowWedge');
+
+    $args = array();
+    $args['conditions']['CoEnrollmentFlowWedge.co_enrollment_flow_id'] = $flowId;
+    $args['conditions']['CoEnrollmentFlowWedge.plugin'] = 'ApplicationTeamEnroller';
+    $args['conditions']['CoEnrollmentFlowWedge.status'] = SuspendableStatusEnum::Active;
+    $args['contain'] = false;
+
+    if($Wedge->find('count', $args) < 1) {
+      return _txt('pl.applicationteamenroller.er.newcomer_flow.wedge');
+    }
+
+    return null;
+  }
+
+  /**
+   * Validate the newcomer enrollment flow (see newcomerFlowProblem()).
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Array $check Field being validated
+   * @return Mixed        True if valid, otherwise an error message
+   */
+
+  public function validateNewcomerFlow($check) {
+    $coId = isset($this->data[$this->alias]['co_id']) ? $this->data[$this->alias]['co_id'] : null;
+
+    if(empty($coId)) {
+      $id = !empty($this->data[$this->alias]['id']) ? $this->data[$this->alias]['id'] : $this->id;
+
+      if(!empty($id)) {
+        $coId = $this->field('co_id', array($this->alias . '.id' => $id));
+      }
+    }
+
+    $problem = $this->newcomerFlowProblem($coId, reset($check));
+
+    return ($problem === null) ? true : $problem;
   }
 
   /**

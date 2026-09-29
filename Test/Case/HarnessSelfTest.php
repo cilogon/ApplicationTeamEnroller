@@ -55,11 +55,25 @@ class HarnessSelfTest extends AteTestCase {
     $this->assertTrue(is_int($model->find('count')), 'a count query should return an int from the real DB');
   }
 
-  public function testPluginDeclaresNoJobsOrMenusYet() {
+  /**
+   * No jobs yet (U11 adds expiry). U4: the CO configuration page links the
+   * applications, research teams, and settings screens, and only those.
+   */
+  public function testPluginDeclaresNoJobsYetAndConfigMenus() {
     $model = $this->model('ApplicationTeamEnroller.ApplicationTeamEnroller');
 
     $this->assertEqual(array(), $model->getAvailableJobs());
-    $this->assertEqual(array(), $model->cmPluginMenus());
+
+    $menus = $model->cmPluginMenus();
+    $this->assertEqual(array('coconfig'), array_keys($menus));
+
+    $targets = array();
+    foreach($menus['coconfig'] as $label => $item) {
+      $this->assertFalse(strpos($label, 'pl.applicationteamenroller') === 0, "unresolved menu label $label");
+      $targets[] = $item['controller'] . '/' . $item['action'];
+    }
+    sort($targets);
+    $this->assertEqual(array('ate_applications/index', 'ate_research_teams/index', 'ate_settings/index'), $targets);
   }
 
   /**
