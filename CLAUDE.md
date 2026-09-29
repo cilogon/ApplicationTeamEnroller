@@ -52,12 +52,12 @@ Follow the standard Registry plugin layout:
 
 ## Testing & Verification
 - Lint changed PHP with `php -l <file>` before treating a change as complete.
-- Run the plugin's automated test suite before treating a change as complete,
-  once one exists. CakePHP 2.x's PHPUnit-based `cake test` does not run on
-  PHP 8.x; the Oa4mpClient plugin
-  (`/mnt/pophome/CILogon2/OA4MPWork/Oa4mpClient`, `Test/` and
-  `Console/Command/`) has a thin CakePHP-shell test runner that can serve as the
-  pattern.
+- Run the plugin's automated test suite before treating a change as complete.
+  The suite exists under `Test/`, and `Test/run.sh` (Docker: a pinned Registry
+  4.6.x image plus Postgres) is the gate: it must end with the suite passing.
+  CakePHP 2.x's PHPUnit-based `cake test` does not run on PHP 8.x, so the suite
+  uses a thin CakePHP-shell runner copied from the Oa4mpClient plugin; see
+  `Test/README.md` for the harness and how to write tests.
 - Behavior that involves enrollment flows, petitions, email delivery, CILogon
   login, or group provisioning cannot be fully verified from this repository
   alone; validate it manually in a running COmanage Registry 4.6.x.
