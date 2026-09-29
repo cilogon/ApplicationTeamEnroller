@@ -481,6 +481,29 @@ class ApprovalTest extends AteEngineTestCase {
   }
 
   /**
+   * A PHP Error (not an Exception) inside approve()'s transaction still
+   * rolls it back and restores CoGroupMember provisioning, then propagates.
+   */
+  public function testErrorDuringApprovalRollsBackAndRestoresProvisioning() {
+    $req = $this->pending('A', array('t1'));
+    $this->Req->errorMembershipForGroup = $this->g['t1'];
+    $thrown = null;
+
+    try {
+      $this->Req->approve($this->coId, $req['req'], $this->p['approverA'], 'approver');
+    } catch(Throwable $e) {
+      $thrown = $e;
+    }
+
+    $this->assertTrue($thrown instanceof Error, 'the Error propagates: ' . ($thrown ? get_class($thrown) : 'none'));
+    $this->assertFalse(ConnectionManager::getDataSource('default')->inTransaction(), 'the transaction is closed');
+    $this->assertTrue(ClassRegistry::init('CoGroupMember')->Behaviors->enabled('Provisioner'),
+      'CoGroupMember provisioning is restored');
+    $this->assertEqual('pending_decision', $this->requestRow($req['req'])['status'], 'the approval rolled back');
+    $this->assertEqual(array(), $this->directRows('t1', $this->p['p1']), 'no membership');
+  }
+
+  /**
    * The real model (not the probe) approves and provisions without error
    * when the CO has no provisioning targets.
    */

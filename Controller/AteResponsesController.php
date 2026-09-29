@@ -14,7 +14,9 @@
  *   The page builds the identity snapshot (KTD5) into the session along with
  *   a one-time form nonce. A submit commits only when the current login is
  *   the snapshot's and the form is the one the snapshot was built for, so
- *   one login can never commit against another's snapshot.
+ *   one login can never commit against another's snapshot. Past expiry,
+ *   in a bound petition's grace window (KTD14), only that petition's
+ *   newcomer may answer; everyone else is told the invitation expired.
  * - confirmation: the state of each application after a response this
  *   session committed, with no mismatch details (R19).
  * - explanation: why a newcomer's enrollment flow was stopped, for the
@@ -200,7 +202,7 @@ class AteResponsesController extends ApplicationTeamEnrollerAppController {
     }
 
     $inv = $this->AteInvitation->findByTokenHash($hash);
-    $problem = $this->invitationProblem($inv);
+    $problem = $this->responseProblem($inv, $this->Session->read('Auth.User.username'));
 
     if($problem !== null) {
       $this->explain($problem);
@@ -587,7 +589,8 @@ class AteResponsesController extends ApplicationTeamEnrollerAppController {
 
   /**
    * Why an invitation cannot be answered, after expiring it if it has
-   * lapsed (KTD14).
+   * lapsed (KTD14). A sent invitation in the grace window of a bound
+   * petition passes here; responseProblem() decides who may use it.
    *
    * @since  COmanage Registry v4.6.0
    * @param  Array  $inv Invitation, or null
@@ -608,6 +611,35 @@ class AteResponsesController extends ApplicationTeamEnrollerAppController {
   }
 
   /**
+   * Why the current login cannot answer an invitation: invitationProblem(),
+   * and past expiry, anyone but the bound newcomer (KTD11, KTD14). The grace
+   * window keeps a sent invitation open only so the petition bound while it
+   * was live can finish; for everyone else it has expired (R17). The link
+   * itself (landing()) still leads here, where the login is known.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Array  $inv        Invitation, or null
+   * @param  String $identifier Current login, or null
+   * @return String             Explanation reason, or null if it can be answered
+   */
+
+  protected function responseProblem($inv, $identifier) {
+    $problem = $this->invitationProblem($inv);
+
+    if($problem !== null) {
+      return $problem;
+    }
+
+    if($inv['expires'] < date('Y-m-d H:i:s')
+       && (!is_string($identifier) || $identifier === ''
+           || $this->AteEnrollmentRequest->boundNewcomer((int)$inv['co_id'], $inv['id'], $identifier) === null)) {
+      return 'expired';
+    }
+
+    return null;
+  }
+
+  /**
    * Show the explanation page for an invitation that another submit, a
    * revocation, or expiry has already moved on (KTD8), reading its current
    * status.
@@ -617,7 +649,8 @@ class AteResponsesController extends ApplicationTeamEnrollerAppController {
    */
 
   protected function explainAlreadyHandled($inv) {
-    $this->explain($this->invitationProblem($this->AteInvitation->findByTokenHash($inv['token_hash'])) ?: 'answered');
+    $this->explain($this->responseProblem($this->AteInvitation->findByTokenHash($inv['token_hash']), null)
+                   ?: 'answered');
   }
 
   /**

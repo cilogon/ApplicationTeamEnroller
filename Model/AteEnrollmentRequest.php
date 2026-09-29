@@ -560,7 +560,9 @@ class AteEnrollmentRequest extends ApplicationTeamEnrollerAppModel {
       }
 
       $this->commitOrFail($dbc);
-    } catch(Exception $e) {
+    } catch(Throwable $e) {
+      // Any Throwable, so a PHP Error cannot leave the transaction open or
+      // CoGroupMember provisioning off for the rest of the process
       $dbc->rollback();
       $this->resumeMembershipProvisioning();
       throw $e;
@@ -582,15 +584,16 @@ class AteEnrollmentRequest extends ApplicationTeamEnrollerAppModel {
    *
    * The invitation row is locked while the draft is written, so a draft
    * never lands on an invitation that a response, revocation, or expiry has
-   * just moved on. The caller checks that the current login equals the
-   * snapshot identifier (KTD5) and that the invitation has not lapsed
-   * (KTD14).
+   * just moved on, and none is written once the invitation is past its
+   * expiry, even in a bound petition's grace window (KTD14): that petition
+   * commits the draft it was bound with. The caller checks that the current
+   * login equals the snapshot identifier (KTD5).
    *
    * @since  COmanage Registry v4.6.0
    * @param  Integer $coId         CO ID
    * @param  Integer $invitationId AteInvitation ID
    * @param  Array   $choices      True (accept) or false (decline), keyed by AteEnrollmentRequest ID; one per offered request
-   * @return Boolean               True if the draft was saved, false if the invitation is no longer sent
+   * @return Boolean               True if the draft was saved, false if the invitation is no longer sent or is past its expiry
    * @throws InvalidArgumentException If the choices are not one boolean per offered request
    * @throws RuntimeException         If a write fails
    */
@@ -602,10 +605,12 @@ class AteEnrollmentRequest extends ApplicationTeamEnrollerAppModel {
     $dbc->begin();
 
     try {
-      $inv = $this->sqlRows('SELECT id, status FROM ' . $this->tablePrefix . 'ate_invitations'
+      $inv = $this->sqlRows('SELECT id, status, expires FROM ' . $this->tablePrefix . 'ate_invitations'
                             . ' WHERE id = ? AND co_id = ? FOR UPDATE', array((int)$invitationId, (int)$coId));
 
-      if(empty($inv) || $inv[0]['status'] !== AteInvitationStatusEnum::Sent) {
+      // Past expiry the invitation is kept only for a petition already
+      // bound, whose draft must not change (KTD11, KTD14)
+      if(empty($inv) || $inv[0]['status'] !== AteInvitationStatusEnum::Sent || $inv[0]['expires'] < $now) {
         $dbc->rollback();
         return false;
       }
@@ -744,7 +749,9 @@ class AteEnrollmentRequest extends ApplicationTeamEnrollerAppModel {
       }
 
       $this->commitOrFail($dbc);
-    } catch(Exception $e) {
+    } catch(Throwable $e) {
+      // Any Throwable, so a PHP Error cannot leave the transaction open or
+      // CoGroupMember provisioning off for the rest of the process
       $dbc->rollback();
       $this->resumeMembershipProvisioning();
       throw $e;
@@ -1357,7 +1364,8 @@ class AteEnrollmentRequest extends ApplicationTeamEnrollerAppModel {
    * @param  Integer $coId            CO ID
    * @param  Integer $coPersonId      CoPerson to attach the login to
    * @param  String  $identifier      Login identifier
-   * @param  String  $identifierType  Identifier type (AteSetting login_identifier_type)
+   * @param  String  $identifierType  Identifier type (AteSetting login_identifier_type); empty for
+   *                                  AteSetting::DefaultLoginIdentifierType
    * @param  Integer $actorCoPersonId Acting CoPerson ID, or null
    * @return Array                    'org_identity_id' (Integer) and 'created' (Boolean)
    * @throws RuntimeException If the login belongs to another CoPerson of the CO, or a save fails
@@ -1366,6 +1374,11 @@ class AteEnrollmentRequest extends ApplicationTeamEnrollerAppModel {
   public function attachLogin($coId, $coPersonId, $identifier, $identifierType, $actorCoPersonId) {
     if(!is_string($identifier) || $identifier === '' || empty($coPersonId)) {
       throw new InvalidArgumentException(_txt('pl.applicationteamenroller.er.snapshot.identifier'));
+    }
+
+    // The setting may be left empty; every caller then uses the default
+    if(!is_string($identifierType) || trim($identifierType) === '') {
+      $identifierType = AteSetting::DefaultLoginIdentifierType;
     }
 
     $dbc = $this->getDataSource();
@@ -1437,7 +1450,9 @@ class AteEnrollmentRequest extends ApplicationTeamEnrollerAppModel {
         _txt('pl.applicationteamenroller.rs.login.linked', array($identifier, $identifierType)));
 
       $this->commitOrFail($dbc);
-    } catch(Exception $e) {
+    } catch(Throwable $e) {
+      // Any Throwable: this runs nested inside approve()'s transaction, whose
+      // rollback must find the nesting balanced
       $dbc->rollback();
       throw $e;
     }
@@ -1550,12 +1565,9 @@ class AteEnrollmentRequest extends ApplicationTeamEnrollerAppModel {
 
     if($linkRequired && !empty($usable)) {
       $settings = ClassRegistry::init('ApplicationTeamEnroller.AteSetting')->getOrCreateForCo($coId);
-      $type = !empty($settings['AteSetting']['login_identifier_type'])
-              ? $settings['AteSetting']['login_identifier_type']
-              : AteSetting::DefaultLoginIdentifierType;
 
-      $link = $this->attachLogin($coId, $researcher, (string)$req['responder_identifier'], $type,
-                                 $deciderCoPersonId);
+      $link = $this->attachLogin($coId, $researcher, (string)$req['responder_identifier'],
+                                 $settings['AteSetting']['login_identifier_type'], $deciderCoPersonId);
       $linkedOid = $link['org_identity_id'];
       $changed = $changed || $link['created'];
 

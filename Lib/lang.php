@@ -170,6 +170,7 @@ The link can be used for one response and expires on (@EXPIRES).
   'pl.applicationteamenroller.er.research_team.unique' => 'This group is already a research team.',
   'pl.applicationteamenroller.er.application_team.unique' => 'This research team is already authorized for this application.',
   'pl.applicationteamenroller.er.setting.unique' => 'Settings already exist for this CO.',
+  'pl.applicationteamenroller.er.setting.email_env_vars.header' => '%1$s is set from a client request header, so it cannot identify a login\'s email address.',
   'pl.applicationteamenroller.er.application.group' => 'Choose a group of this CO.',
   'pl.applicationteamenroller.er.research_team.group' => 'This group cannot be a research team. Choose a standard group of this CO that is not already a research team or an application access group.',
   'pl.applicationteamenroller.er.application_team.team' => 'Only an active research team of this CO can be authorized for an application.',
@@ -278,6 +279,7 @@ The link can be used for one response and expires on (@EXPIRES).
   'pl.applicationteamenroller.job.expire_invitations.contained' => 'CO Person %1$s from petition %2$s suspended',
   'pl.applicationteamenroller.job.expire_invitations.error' => 'Error: %1$s',
   'pl.applicationteamenroller.rs.petition.retired.expired' => 'Retired by Application Team Enroller: invitation %1$s expired',
+  'pl.applicationteamenroller.rs.petition.retired.revoked' => 'Retired by Application Team Enroller: invitation %1$s was revoked',
   'pl.applicationteamenroller.rs.contained' => 'Suspended by Application Team Enroller: enrolled through the newcomer enrollment flow by petition %1$s, which no invitation is bound to',
   'pl.applicationteamenroller.rs.contained.petition' => 'Application Team Enroller suspended the enrollee: no invitation is bound to this petition',
 

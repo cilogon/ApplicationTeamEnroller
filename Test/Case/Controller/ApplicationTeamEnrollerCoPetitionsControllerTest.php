@@ -28,6 +28,8 @@
  *   D  approval off        team  T5
  */
 
+App::uses('AteSetting', 'ApplicationTeamEnroller.Model');
+
 class ApplicationTeamEnrollerCoPetitionsControllerTest extends AtePetitionTestCase {
 
   // ---------------------------------------------------------------------
@@ -462,6 +464,73 @@ class ApplicationTeamEnrollerCoPetitionsControllerTest extends AtePetitionTestCa
     $this->assertEqual('pending_decision', $this->reqStatus($inv, 'A'), 'A routed');
     $this->assertEqual(1, count($this->petitions()), 'no new petition');
     $this->assertEqual(1, count($this->newPeople($before)), 'no second CoPerson');
+  }
+
+  /**
+   * KTD11, KTD14: in the grace window after expiry, the newcomer whose bound
+   * petition finalized can still commit from the response page; another
+   * login cannot.
+   */
+  public function testBoundNewcomerContinuesInGraceWindow() {
+    $sub = $this->sub('grace-continuing');
+    $this->loginAs($sub, array(self::Invited));
+    $before = $this->maxPersonId();
+    $inv = $this->tokenInvitation(self::Invited, array('A' => array('t1')));
+
+    // The flow completed and the login was attached, but the commit did not happen
+    $this->follow($this->handOff($inv, array('A' => true)), $this->stopBefore('core:finalize'));
+    $person = (int)$this->newPeople($before)[0]['id'];
+    $this->Req->attachLogin($this->coId, $person, $sub, 'eppn', null);
+    $pt = (int)$this->invitationRow($inv['id'])['co_petition_id'];
+    $this->fx->query("UPDATE cm_co_petitions SET status = 'F' WHERE id = " . $pt);
+
+    $this->fx->query("UPDATE cm_ate_invitations SET expires = '" . date('Y-m-d H:i:s', time() - 3600)
+                     . "' WHERE id = " . (int)$inv['id']);
+
+    // Another login is refused
+    $other = $this->sub('grace-intruder');
+    $this->loginAs($other, array(self::Invited));
+    $land = $this->responses();
+    $land->harnessInvoke('landing', array($inv['token']));
+    $page = $this->responses();
+    $page->harnessInvoke('respond', array(), 'GET');
+    $this->assertEqual('explanation', $page->view, 'another login sees the explanation');
+    $this->assertEqual('expired', $page->viewVars['vv_reason'], 'expired');
+    $this->assertEqual('sent', $this->invStatus($inv), 'nothing committed');
+
+    // The bound newcomer continues
+    $this->loginAs($sub, array(self::Invited));
+    $h = $this->respondTo($inv, array('A' => true));
+    $this->assertTrue($this->isConfirmation($h->harnessRedirect), 'committed on the response page');
+    $row = $this->invitationRow($inv['id']);
+    $this->assertEqual('responded', $row['status'], 'responded');
+    $this->assertEqual($person, (int)$row['invitee_co_person_id'], 'against the petition\'s CoPerson');
+    $this->assertEqual('pending_decision', $this->reqStatus($inv, 'A'), 'A routed');
+  }
+
+  /**
+   * A CO whose login identifier type is empty still finishes a newcomer's
+   * flow: the login is attached with the default type, as approval does.
+   */
+  public function testEmptyLoginIdentifierTypeFallsBackToDefault() {
+    $this->fx->query("UPDATE cm_ate_settings SET login_identifier_type = NULL WHERE co_id = " . (int)$this->coId);
+    ClassRegistry::init('ApplicationTeamEnroller.AteSetting')->getDataSource()->flushQueryCache();
+
+    $inv = $this->tokenInvitation(self::Invited, array('A' => array('t1')));
+    $sub = $this->sub('no-type');
+    $this->loginAs($sub, array(self::Invited));
+    $before = $this->maxPersonId();
+
+    $this->completeRun($inv, array('A' => true));
+
+    $person = (int)$this->newPeople($before)[0]['id'];
+    $this->assertEqual($person, $this->Req->existingMemberCoPersonId($this->coId, $sub), 'login attached');
+    $this->assertEqual(AteSetting::DefaultLoginIdentifierType,
+                       $this->fx->scalar('SELECT type FROM cm_identifiers WHERE identifier = '
+                                         . ConnectionManager::getDataSource('default')->value($sub)
+                                         . ' AND org_identity_id IS NOT NULL'),
+                       'with the default identifier type');
+    $this->assertEqual('responded', $this->invStatus($inv), 'committed');
   }
 
   /** KTD5: finalize commits only for the login that responded. */

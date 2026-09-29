@@ -426,14 +426,168 @@ class ExpireInvitationsJobTest extends AtePetitionTestCase {
     ));
 
     $this->runJob();
+    // Long past the invitation's lifetime and grace window: still committed
+    $this->lapse($inv, 30 * 86400);
     $this->runJob();
 
+    $this->assertEqual('responded', $this->invStatus($inv), 'the invitation committed it');
     $this->assertEqual('A', $this->personStatus($person), 'bound newcomer still Active');
     $this->assertEqual(array('A'), $this->roleStatuses($person), 'and its role');
     $this->assertEqual(array(), $this->containmentNotices($person), 'no notice');
     $this->assertEqual(array(), $this->containmentHistory($person), 'no history record');
     $this->assertEqual(array(), $this->containmentNotices($this->p['p1']), 'other flow ignored');
     $this->assertFalse($this->personStatus($this->p['p1']) === 'S', 'its enrollee not suspended');
+  }
+
+  /**
+   * Run a newcomer through core finalize, calling $before just before the
+   * wedge's finalize step (after core has made the enrollee Active). Returns
+   * the run, the bound petition, and the enrollee.
+   */
+  protected function finalizeRefusedRun($inv, $before) {
+    $first = $this->maxPersonId();
+    $run = $this->follow($this->handOff($inv, array('A' => true)),
+      function($controller, $action, $pass, $named) use ($before) {
+        if($controller === 'application_team_enroller_co_petitions' && $action === 'finalize') {
+          $before();
+        }
+        return null;
+      });
+
+    $people = $this->newPeople($first);
+    $this->assertEqual(1, count($people), 'core created one CoPerson');
+    $person = (int)$people[0]['id'];
+    $pt = (int)$this->fx->scalar('SELECT id FROM cm_co_petitions WHERE enrollee_co_person_id = ' . $person
+                                 . ' AND co_petition_id IS NULL');
+    $this->assertEqual('F', $this->fx->scalar('SELECT status FROM cm_co_petitions WHERE id = ' . $pt),
+                       'core finalized the petition');
+    $this->assertEqual('A', $this->personStatus($person), 'and made the enrollee Active');
+
+    return array('run' => $run, 'petition' => $pt, 'person' => $person);
+  }
+
+  /** The job suspends $person and notifies the CO admins once, over two runs. */
+  protected function assertContainedOnce($person, $label) {
+    $job = $this->runJob();
+    $this->assertEqual(JobStatusEnum::Complete, $job['status'], $label . ': job complete: ' . $job['finish_summary']);
+    $this->assertEqual('S', $this->personStatus($person), $label . ': CoPerson suspended');
+    $this->assertEqual(array('S'), $this->roleStatuses($person), $label . ': and its role');
+    $this->assertEqual(1, count($this->containmentHistory($person)), $label . ': one history record');
+
+    $notices = $this->containmentNotices($person);
+    $this->assertEqual(1, count($notices), $label . ': one notice');
+    $this->assertEqual((int)$this->p['coAdmin'], (int)$notices[0]['recipient_co_person_id'],
+                       $label . ': to the CO admins group\'s member');
+
+    $this->runJob();
+    $this->assertEqual(1, count($this->containmentNotices($person)), $label . ': no second notice');
+    $this->assertEqual(1, count($this->containmentHistory($person)), $label . ': no second history record');
+  }
+
+  /**
+   * KTD18: the invitation is revoked after core finalize and before the
+   * wedge's finalize, which refuses. The petition stays bound, but the
+   * invitation never committed it, so its Active enrollee is contained.
+   */
+  public function testRevokedBeforeWedgeFinalizeIsContained() {
+    $inv = $this->tokenInvitation(self::Invited, array('A' => array('t1')));
+    $this->loginAs($this->sub('revoked-mid'), array(self::Invited));
+    $invId = $inv['id'];
+    $inviter = $this->p['inviter'];
+    $coId = $this->coId;
+
+    $r = $this->finalizeRefusedRun($inv, function() use ($coId, $invId, $inviter) {
+      ClassRegistry::init('ApplicationTeamEnroller.AteInvitation')->revoke($coId, $invId, $inviter);
+    });
+
+    $this->assertEqual('revoked', $this->explanationReason($r['run']['end']), 'the wedge refused');
+    $this->assertEqual('revoked', $this->invStatus($inv), 'revoked');
+    $this->assertEqual($r['petition'], (int)$this->invitationRow($inv['id'])['co_petition_id'], 'still bound');
+
+    $this->assertContainedOnce($r['person'], 'revoked');
+  }
+
+  /**
+   * KTD18: the invitation is answered from another tab (decline everything)
+   * after core finalize; the wedge refuses, and the enrollee is contained.
+   */
+  public function testAnsweredElsewhereBeforeWedgeFinalizeIsContained() {
+    $inv = $this->tokenInvitation(self::Invited, array('A' => array('t1')));
+    $this->loginAs($this->sub('answered-mid'), array(self::Invited));
+
+    $r = $this->finalizeRefusedRun($inv, function() use ($inv) {
+      $h = $this->respondTo($inv, array('A' => false));
+      $this->assertTrue($this->isConfirmation($h->harnessRedirect), 'declined from the other tab');
+    });
+
+    $this->assertEqual('answered', $this->explanationReason($r['run']['end']), 'the wedge refused');
+    $row = $this->invitationRow($inv['id']);
+    $this->assertEqual('responded', $row['status'], 'responded');
+    $this->assertEqual($r['petition'], (int)$row['co_petition_id'], 'still bound');
+    $this->assertFalse((int)$row['invitee_co_person_id'] === $r['person'], 'not committed to the enrollee');
+
+    $this->assertContainedOnce($r['person'], 'answered');
+  }
+
+  /**
+   * KTD18: a second invitation's hand-off overwrites the session binding, so
+   * the first flow's finalize refuses. The first invitation stays sent with
+   * the petition bound: the job waits through its grace window, then
+   * contains the enrollee.
+   */
+  public function testOverwrittenSessionIsContainedAfterGraceWindow() {
+    $inv = $this->tokenInvitation(self::Invited, array('A' => array('t1')));
+    $second = $this->tokenInvitation(self::Invited, array('D' => array('t5')));
+    $this->loginAs($this->sub('two-tabs'), array(self::Invited));
+
+    $r = $this->finalizeRefusedRun($inv, function() use ($second) {
+      $this->handOff($second, array('D' => true));
+    });
+
+    $this->assertEqual('newcomer_session', $this->explanationReason($r['run']['end']), 'the wedge refused');
+    $this->assertEqual('sent', $this->invStatus($inv), 'first invitation still sent');
+    $this->assertEqual($r['petition'], (int)$this->invitationRow($inv['id'])['co_petition_id'], 'still bound');
+
+    // Inside the invitation's lifetime, and inside the grace window: wait
+    $this->runJob();
+    $this->lapse($inv, 3600);
+    $this->runJob();
+    $this->assertEqual('A', $this->personStatus($r['person']), 'left alone while the invitation can still commit it');
+    $this->assertEqual(array(), $this->containmentNotices($r['person']), 'no notice yet');
+
+    $this->lapse($inv, 25 * 3600);
+    $this->assertContainedOnce($r['person'], 'overwritten');
+    $this->assertEqual('expired', $this->invStatus($inv), 'the invitation expired');
+  }
+
+  /**
+   * R18, KTD11: revoking an invitation retires its bound petition that has
+   * not finished, so core can no longer finalize it or activate its enrollee.
+   */
+  public function testRevokeRetiresUnfinishedBoundPetition() {
+    $inv = $this->tokenInvitation(self::Invited, array('A' => array('t1')));
+    $this->loginAs($this->sub('revoked-early'), array(self::Invited));
+    $before = $this->maxPersonId();
+    $run = $this->follow($this->handOff($inv, array('A' => true)), $this->stopBefore('core:finalize'));
+    $this->assertNotEmpty($run['stopped_at'], 'stopped before finalize');
+    $pt = (int)$this->invitationRow($inv['id'])['co_petition_id'];
+    $this->assertTrue($pt > 0, 'petition bound');
+
+    $this->assertTrue(ClassRegistry::init('ApplicationTeamEnroller.AteInvitation')->revoke(
+      $this->coId, $inv['id'], $this->p['inviter']), 'revoked');
+
+    $this->assertEqual('X', $this->fx->scalar('SELECT status FROM cm_co_petitions WHERE id = ' . $pt),
+                       'the bound petition is retired as Declined');
+    $this->assertEqual(1, (int)$this->fx->scalar("SELECT count(*) FROM cm_co_petition_history_records"
+                         . " WHERE co_petition_id = " . $pt . " AND action = 'CM' AND comment = "
+                         . ConnectionManager::getDataSource('default')->value(
+                             _txt('pl.applicationteamenroller.rs.petition.retired.revoked', array((int)$inv['id'])))),
+                       'the retirement is recorded on it');
+
+    $this->follow($run['stopped_at']);
+    $this->assertEqual('X', $this->fx->scalar('SELECT status FROM cm_co_petitions WHERE id = ' . $pt),
+                       'core did not finalize it');
+    $this->assertFalse($this->personStatus((int)$this->newPeople($before)[0]['id']) === 'A', 'no Active enrollee');
   }
 
   // ---------------------------------------------------------------------

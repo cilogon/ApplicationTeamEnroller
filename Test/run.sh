@@ -164,7 +164,13 @@ echo "==> Verifying the suite ran the expected number of tests..."
 #       answer-between-read-and-update race, the bound-petition grace window
 #       and retirement, containment of a done: bypass, a bound newcomer never
 #       suspended, requeue, App.base).
-min_tests_run=227
+#  241  Code-review fixes -- containment of a bound petition whose finalize the
+#       wedge refused (revoked, answered elsewhere, session overwritten), revoke
+#       retiring the bound petition, the grace window open only to the bound
+#       newcomer, no draft past expiry, the default login identifier type,
+#       HTTP_ email variables rejected and ignored, PHP Errors rolling back
+#       approve and commitResponse, retired and unset-approval routing.
+min_tests_run=241
 tests_run="$(sed -n 's/^\([0-9][0-9]*\) tests run, [0-9][0-9]* failed\.$/\1/p' \
   <<< "$suite_tail" | head -n 1)"
 if [ -z "$tests_run" ]; then

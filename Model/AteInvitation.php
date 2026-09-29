@@ -403,8 +403,11 @@ class AteInvitation extends ApplicationTeamEnrollerAppModel {
   /**
    * Revoke a sent invitation (R18, AE12, KTD8): the invitation becomes
    * revoked, recording who revoked it and when, and its offered requests
-   * become revoked. Only an invitation of the CO that is still sent moves,
-   * so a second revoke, or one racing a response or expiry, loses.
+   * become revoked. A bound newcomer petition that has not finished is
+   * retired (KTD11), so core cannot finalize it or activate its enrollee;
+   * one core has already finalized is left to the expiry job's containment
+   * (KTD18). Only an invitation of the CO that is still sent moves, so a
+   * second revoke, or one racing a response or expiry, loses.
    *
    * The caller checks AteAuthzComponent::mayRevokeInvitation() first.
    *
@@ -454,6 +457,15 @@ class AteInvitation extends ApplicationTeamEnrollerAppModel {
 
       if(!$ok) {
         throw new RuntimeException(_txt('er.db.save-a', array('AteEnrollmentRequest')));
+      }
+
+      $bound = $this->sqlRows('SELECT co_petition_id FROM ' . $this->tablePrefix . 'ate_invitations WHERE id = ?',
+                              array((int)$invitationId));
+
+      if(!empty($bound[0]['co_petition_id'])) {
+        $this->retirePetition((int)$bound[0]['co_petition_id'],
+                              _txt('pl.applicationteamenroller.rs.petition.retired.revoked',
+                                   array((int)$invitationId)));
       }
 
       $dbc->commit();
@@ -711,8 +723,9 @@ class AteInvitation extends ApplicationTeamEnrollerAppModel {
    * Role (if any) Declined, and $comment is recorded on it. A finished
    * petition (Declined, Denied, Duplicate, or Finalized) is left as it is.
    *
-   * Used when a later petition replaces a bound one (bindPetition()) and by
-   * the expiry job after the grace window (U11).
+   * Used when a later petition replaces a bound one (bindPetition()), when
+   * the invitation is revoked (revoke()), and by the expiry job after the
+   * grace window (U11).
    *
    * @since  COmanage Registry v4.6.0
    * @param  Integer $petitionId CoPetition ID

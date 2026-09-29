@@ -15,10 +15,16 @@
  * 3. The inviting admin of each expired invitation is notified once (R37),
  *    tracked by expiry_notified, including invitations expired on access.
  * 4. Containment (KTD18): a petition finalized on the CO's newcomer flow that
- *    no invitation is bound to (for example one run through the
- *    done:<wedge id> skip URL) has its enrollee suspended, a history record
- *    written, and the CO admins group notified (an informational
- *    notification, which Registry registers for each Active member). The petition then carries an
+ *    no invitation committed to its enrollee has its enrollee suspended, a
+ *    history record written, and the CO admins group notified (an
+ *    informational notification, which Registry registers for each Active
+ *    member). That covers a petition no invitation is bound to (for example
+ *    one run through the done:<wedge id> skip URL) and a bound petition
+ *    whose finalize the wedge refused after core had already made the
+ *    enrollee Active (the invitation was revoked or answered elsewhere, or
+ *    the session binding was replaced). A bound petition whose invitation
+ *    is still sent is left until the invitation's grace window ends, since
+ *    it can still commit. The petition then carries an
  *    AteHistoryActionEnum::Contained record, so it is handled once.
  *
  * With the requeue parameter the job runs again that many minutes after
@@ -155,8 +161,8 @@ class ExpireInvitationsJob extends CoJobBackend {
       }
     }
 
-    // 4. Contain newcomer-flow enrollments no invitation is bound to
-    foreach($this->unboundNewcomerPetitions($coId) as $row) {
+    // 4. Contain newcomer-flow enrollments no invitation committed
+    foreach($this->uncommittedNewcomerPetitions($coId, $now) as $row) {
       try {
         $this->contain($coId, (int)$row['id'], (int)$row['enrollee_co_person_id']);
         $counts['contained']++;
@@ -295,17 +301,25 @@ class ExpireInvitationsJob extends CoJobBackend {
   }
 
   /**
-   * Petitions finalized on the CO's newcomer flow that no invitation is
-   * bound to and that the job has not handled (KTD18). An enrollee who is
-   * the invitee of an invitation of the CO is left out too: that person was
-   * committed through the plugin.
+   * Petitions finalized on the CO's newcomer flow that no invitation
+   * committed to their enrollee and that the job has not handled (KTD18).
+   *
+   * Core finalizes a petition, making its enrollee Active, before the
+   * wedge's finalize step runs, so a bound petition whose finalize the wedge
+   * refused leaves an Active CoPerson too. A binding alone therefore does not
+   * exempt a petition. It is left out only when the invitation bound to it
+   * responded with the enrollee as its invitee, or is still sent and inside
+   * its grace window (KTD14), when the petition may yet commit. An enrollee
+   * who is the invitee of any invitation of the CO is left out as well: that
+   * person was committed through the plugin.
    *
    * @since  COmanage Registry v4.6.0
    * @param  Integer $coId CO ID
+   * @param  Integer $now  Current Unix time
    * @return Array         Rows with 'id' (CoPetition) and 'enrollee_co_person_id'
    */
 
-  protected function unboundNewcomerPetitions($coId) {
+  protected function uncommittedNewcomerPetitions($coId, $now) {
     $flow = $this->sqlRows('SELECT newcomer_co_enrollment_flow_id FROM ' . $this->table('ate_settings')
                            . ' WHERE co_id = ? AND ate_setting_id IS NULL AND deleted IS NOT TRUE',
                            array((int)$coId));
@@ -319,14 +333,20 @@ class ExpireInvitationsJob extends CoJobBackend {
                           . ' AND pt.enrollee_co_person_id IS NOT NULL'
                           . ' AND pt.co_petition_id IS NULL AND pt.deleted IS NOT TRUE'
                           . ' AND NOT EXISTS (SELECT 1 FROM ' . $this->table('ate_invitations') . ' i'
-                          . '   WHERE i.co_petition_id = pt.id)'
+                          . '   WHERE i.co_petition_id = pt.id'
+                          . '   AND ((i.status = ? AND i.invitee_co_person_id = pt.enrollee_co_person_id)'
+                          . '        OR (i.status = ? AND i.expires >= ?)))'
                           . ' AND NOT EXISTS (SELECT 1 FROM ' . $this->table('ate_invitations') . ' i'
                           . '   WHERE i.co_id = pt.co_id AND i.invitee_co_person_id = pt.enrollee_co_person_id)'
                           . ' AND NOT EXISTS (SELECT 1 FROM ' . $this->table('co_petition_history_records') . ' h'
                           . '   WHERE h.co_petition_id = pt.id AND h.action = ?)'
                           . ' ORDER BY pt.id',
                           array((int)$coId, (int)$flow[0]['newcomer_co_enrollment_flow_id'],
-                                PetitionStatusEnum::Finalized, AteHistoryActionEnum::Contained));
+                                PetitionStatusEnum::Finalized,
+                                AteInvitationStatusEnum::Responded,
+                                AteInvitationStatusEnum::Sent,
+                                date('Y-m-d H:i:s', $now - AteInvitation::PetitionGraceSeconds),
+                                AteHistoryActionEnum::Contained));
   }
 
   /**

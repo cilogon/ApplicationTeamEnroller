@@ -39,11 +39,13 @@ class AteRecordingLog extends BaseLog {
 /**
  * The engine model with its seams observable: provisioning is recorded
  * (with whether a transaction was still open), a membership write can be
- * made to fail for one group, and a lookup can be made to throw.
+ * made to fail for one group (with an Exception, or with a PHP Error), and a
+ * lookup can be made to throw.
  */
 class AteEnrollmentRequestProbe extends AteEnrollmentRequest {
   public $provisioned = array();
   public $failMembershipForGroup = null;
+  public $errorMembershipForGroup = null;
   public $failLookup = false;
 
   protected function provisionCoPerson($coPersonId) {
@@ -56,6 +58,11 @@ class AteEnrollmentRequestProbe extends AteEnrollmentRequest {
   protected function writeMembership($coGroupId, $coPersonId, $actorCoPersonId) {
     if($this->failMembershipForGroup !== null && (int)$coGroupId === (int)$this->failMembershipForGroup) {
       throw new RuntimeException('probe: membership write failed');
+    }
+
+    if($this->errorMembershipForGroup !== null && (int)$coGroupId === (int)$this->errorMembershipForGroup) {
+      // A PHP Error, not an Exception (a TypeError or similar in real code)
+      throw new Error('probe: membership write raised an Error');
     }
 
     return parent::writeMembership($coGroupId, $coPersonId, $actorCoPersonId);

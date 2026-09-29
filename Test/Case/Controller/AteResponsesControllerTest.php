@@ -250,6 +250,67 @@ class AteResponsesControllerTest extends AteEngineTestCase {
     $this->assertEqual('expired', $this->reqStatus($pastGrace, 'A'), 'request expired');
   }
 
+  /**
+   * KTD11, KTD14, R17: the grace window exists only for the bound petition.
+   * Past expiry, an existing member or another login is told the invitation
+   * expired, on the page and on a submit of a page opened while it was live,
+   * and nothing is committed.
+   */
+  public function testGraceWindowRefusesOtherResponders() {
+    $flow = $this->fx->flow($this->coId, 'Newcomer ' . uniqid());
+    $petition = $this->fx->insert('cm_co_petitions', array(
+      'co_enrollment_flow_id' => $flow,
+      'co_id' => $this->coId,
+      'status' => 'PA'
+    ));
+    $inv = $this->tokenInvitation(self::Invited, array('C' => array('t4')), array('co_petition_id' => $petition));
+    $lapse = function() use ($inv) {
+      $this->fx->query("UPDATE cm_ate_invitations SET expires = '" . date('Y-m-d H:i:s', time() - 3600)
+                       . "' WHERE id = " . (int)$inv['id']);
+    };
+
+    // An existing member whose login reports the invited address (C is
+    // approval-free, so a commit would add the membership at once)
+    $member = $this->sub('grace-member');
+    $this->login($this->p['p1'], $member, array(self::Invited));
+    $this->loginAs($member, array(self::Invited));
+
+    // A page opened while live, submitted in the grace window
+    $this->land($inv['token']);
+    $page = $this->show();
+    $this->assertEqual('respond', $page->view, 'the page is shown while live');
+    $lapse();
+
+    $h = $this->submit($inv, array('C' => true), $page->viewVars['vv_nonce']);
+    $this->assertEqual('expired', $this->explained($h), 'a member\'s submit is refused as expired');
+    $this->assertEqual(array(), $this->directRows('t4', $this->p['p1']), 'no membership');
+
+    // The page itself, for the member and for a newcomer declining everything
+    $this->assertEqual('expired', $this->explained($this->show()), 'the member is told it expired');
+
+    $this->loginAs($this->sub('grace-other'), array(self::Invited));
+    $this->assertEqual('expired', $this->explained($this->show()), 'so is another login');
+
+    $this->assertEqual('sent', $this->invStatus($inv), 'nothing committed: the bound petition may still finish');
+    $this->assertEqual('offered', $this->reqStatus($inv, 'C'), 'C still offered');
+    $this->assertNull($this->requestRow($inv['req']['C'])['draft_choice'], 'no draft written');
+  }
+
+  /** KTD11, KTD14: a draft cannot be written or rewritten once the invitation is past its expiry. */
+  public function testSaveDraftRefusedPastExpiry() {
+    $inv = $this->invitation(self::Invited, array('A' => array('t1'), 'C' => array('t4')));
+    $this->assertTrue($this->Req->saveDraft($this->coId, $inv['id'], $this->acceptAll($inv)), 'saved while live');
+
+    $this->fx->query("UPDATE cm_ate_invitations SET expires = '" . date('Y-m-d H:i:s', time() - 60)
+                     . "' WHERE id = " . (int)$inv['id']);
+
+    $this->assertFalse($this->Req->saveDraft($this->coId, $inv['id'], array_fill_keys(array_values($inv['req']), false)),
+                       'refused past expiry');
+    $this->assertFalse(ConnectionManager::getDataSource('default')->inTransaction(), 'no transaction left open');
+    $this->assertTrue((bool)$this->requestRow($inv['req']['A'])['draft_choice'], 'A draft unchanged');
+    $this->assertTrue((bool)$this->requestRow($inv['req']['C'])['draft_choice'], 'C draft unchanged');
+  }
+
   /** A live link stores only the token's hash and sends the user to respond(). */
   public function testLandingStoresTokenHashAndSendsToRespond() {
     $inv = $this->tokenInvitation(self::Invited, array('A' => array('t1')));

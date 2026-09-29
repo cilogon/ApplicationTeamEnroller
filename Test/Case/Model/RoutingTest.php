@@ -72,6 +72,65 @@ class RoutingTest extends AteEngineTestCase {
   }
 
   /**
+   * KTD10: a retired approval-required application still nests the team it
+   * authorizes, so B (retired) sharing TS with approval-off C keeps a
+   * matching accept of C waiting for approval.
+   */
+  public function testRetiredApprovalAppSharingTeamIsPendingApproval() {
+    $this->fx->query("UPDATE cm_ate_applications SET status = 'retired' WHERE id = " . (int)$this->app['B']);
+    $inv = $this->invitation(self::Invited, array('C' => array('ts')));
+
+    $this->Req->commitResponse($this->coId, $inv['id'], $this->matchingMember(), $this->acceptAll($inv),
+                               $this->p['p1']);
+
+    $r = $this->requestRow($inv['req']['C']);
+    $this->assertEqual('pending_decision', $r['status']);
+    $this->assertEqual('approval', $r['pending_reason']);
+    $this->assertEqual(0, count($this->allRows('ts', $this->p['p1'])), 'no membership before a decision');
+    $this->assertEqual(array(), $this->Req->provisioned);
+  }
+
+  /** R27: an unset approval_required counts as approval required. */
+  public function testUnsetApprovalRequiredIsPendingApproval() {
+    $this->fx->query('UPDATE cm_ate_applications SET approval_required = NULL WHERE id = ' . (int)$this->app['C']);
+    $inv = $this->invitation(self::Invited, array('C' => array('t4')));
+
+    $this->Req->commitResponse($this->coId, $inv['id'], $this->matchingMember(), $this->acceptAll($inv),
+                               $this->p['p1']);
+
+    $r = $this->requestRow($inv['req']['C']);
+    $this->assertEqual('pending_decision', $r['status']);
+    $this->assertEqual('approval', $r['pending_reason']);
+    $this->assertEqual(0, count($this->allRows('t4', $this->p['p1'])), 'no membership before a decision');
+  }
+
+  /**
+   * A PHP Error (not an Exception) during an automatic approval inside
+   * commitResponse() rolls the whole response back, restores CoGroupMember
+   * provisioning, and propagates.
+   */
+  public function testErrorDuringCommitRollsBackAndRestoresProvisioning() {
+    $inv = $this->invitation(self::Invited, array('C' => array('t4')));
+    $this->Req->errorMembershipForGroup = $this->g['t4'];
+    $thrown = null;
+
+    try {
+      $this->Req->commitResponse($this->coId, $inv['id'], $this->matchingMember(), $this->acceptAll($inv),
+                                 $this->p['p1']);
+    } catch(Throwable $e) {
+      $thrown = $e;
+    }
+
+    $this->assertTrue($thrown instanceof Error, 'the Error propagates: ' . ($thrown ? get_class($thrown) : 'none'));
+    $this->assertFalse(ConnectionManager::getDataSource('default')->inTransaction(), 'the transaction is closed');
+    $this->assertTrue(ClassRegistry::init('CoGroupMember')->Behaviors->enabled('Provisioner'),
+      'CoGroupMember provisioning is restored');
+    $this->assertEqual('sent', $this->invitationRow($inv['id'])['status'], 'the response rolled back');
+    $this->assertEqual('offered', $this->requestRow($inv['req']['C'])['status'], 'C still offered');
+    $this->assertEqual(0, count($this->allRows('t4', $this->p['p1'])), 'no membership');
+  }
+
+  /**
    * Covers AE7. Only another address reported, C with approval off and T4
    * not shared: pending with reason mismatch, and the invitation is flagged.
    */

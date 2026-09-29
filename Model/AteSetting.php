@@ -12,6 +12,7 @@
  */
 
 App::uses('ApplicationTeamEnrollerAppModel', 'ApplicationTeamEnroller.Model');
+App::uses('AteIdentitySnapshot', 'ApplicationTeamEnroller.Lib');
 
 class AteSetting extends ApplicationTeamEnrollerAppModel {
   // Define class name for cake
@@ -76,9 +77,18 @@ class AteSetting extends ApplicationTeamEnrollerAppModel {
       )
     ),
     'email_env_vars' => array(
-      'rule' => array('validateInput'),
-      'required' => false,
-      'allowEmpty' => true
+      'content' => array(
+        'rule' => array('validateInput'),
+        'required' => false,
+        'allowEmpty' => true,
+        'last' => true
+      ),
+      // No variable a client controls (AteIdentitySnapshot::headerDerived())
+      'headers' => array(
+        'rule' => array('validateEmailEnvVars'),
+        'required' => false,
+        'allowEmpty' => true
+      )
     ),
     'login_identifier_type' => array(
       'rule' => array('validateInput'),
@@ -300,6 +310,26 @@ class AteSetting extends ApplicationTeamEnrollerAppModel {
     $problem = $this->newcomerFlowProblem($coId, reset($check));
 
     return ($problem === null) ? true : $problem;
+  }
+
+  /**
+   * Validate the login email variables: none may be filled from a client
+   * request header (HTTP_*, or its REDIRECT_ form), since a responder could
+   * then claim the invited address.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Array $check Field being validated
+   * @return Mixed        True if valid, otherwise an error message
+   */
+
+  public function validateEmailEnvVars($check) {
+    foreach(explode(',', (string)reset($check)) as $n) {
+      if(AteIdentitySnapshot::headerDerived($n)) {
+        return _txt('pl.applicationteamenroller.er.setting.email_env_vars.header', array(trim($n)));
+      }
+    }
+
+    return true;
   }
 
   /**

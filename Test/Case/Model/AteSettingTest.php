@@ -129,6 +129,33 @@ class AteSettingTest extends AteTestCase {
   }
 
   /**
+   * Security: an email variable named HTTP_* (or REDIRECT_HTTP_*) is filled
+   * from a client request header, so a responder could claim any address.
+   * Such names are rejected; ordinary names save.
+   */
+  public function testHttpEmailVariablesAreRejected() {
+    $Setting = $this->model('ApplicationTeamEnroller.AteSetting');
+    $row = $Setting->getOrCreateForCo($this->coId);
+
+    foreach(array('HTTP_X_EMAIL', 'OIDC_CLAIM_email, http_mail', 'REDIRECT_HTTP_X_EMAIL') as $bad) {
+      $Setting->clear();
+      $this->assertFalse($Setting->save(array('id' => $row['AteSetting']['id'],
+                                              'co_id' => $this->coId,
+                                              'invitation_lifetime_days' => 14,
+                                              'email_env_vars' => $bad)),
+        'a header-derived variable must be rejected: ' . $bad);
+      $this->assertTrue(isset($Setting->validationErrors['email_env_vars']), 'on email_env_vars: ' . $bad);
+    }
+
+    $Setting->clear();
+    $this->assertTrue((bool)$Setting->save(array('id' => $row['AteSetting']['id'],
+                                                 'co_id' => $this->coId,
+                                                 'invitation_lifetime_days' => 14,
+                                                 'email_env_vars' => 'OIDC_CLAIM_email, MAIL, XHTTP_MAIL')),
+      'ordinary names save: ' . json_encode($Setting->validationErrors));
+  }
+
+  /**
    * Seed a qualifying newcomer flow in $coId with this plugin's wedge, then
    * apply $overrides to the flow. Returns the flow ID.
    */

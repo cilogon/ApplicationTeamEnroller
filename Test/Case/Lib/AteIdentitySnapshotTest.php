@@ -57,6 +57,26 @@ class AteIdentitySnapshotTest extends AteEngineTestCase {
       'every configured variable, split, deduplicated case-insensitively, invalid names ignored');
   }
 
+  /**
+   * Security: variables filled from client request headers (HTTP_*, and
+   * their REDIRECT_ form) are never read, even if configured.
+   */
+  public function testHttpVariablesAreIgnored() {
+    $this->assertEqual(array('OIDC_CLAIM_email', 'MAIL'),
+      AteIdentitySnapshot::variableNames('OIDC_CLAIM_email, HTTP_X_EMAIL, http_mail, REDIRECT_HTTP_X_EMAIL, MAIL'),
+      'header-derived names dropped');
+
+    $snap = AteIdentitySnapshot::build($this->coId, $this->sub('snap-http'),
+      $this->settings(array('email_env_vars' => 'HTTP_X_EMAIL,OIDC_CLAIM_email')), $this->Req,
+      array(
+        'HTTP_X_EMAIL' => self::Invited,
+        'REDIRECT_HTTP_X_EMAIL' => self::Invited,
+        'OIDC_CLAIM_email' => self::Other
+      ));
+
+    $this->assertEqual(array(self::Other), $snap['emails'], 'a spoofed header address is not collected');
+  }
+
   /** Verified emails on OrgIdentities carrying the login are collected; unverified are not. */
   public function testCollectsVerifiedLoginEmailsOnly() {
     $sub = $this->sub('snap-verified');

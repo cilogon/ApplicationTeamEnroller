@@ -69,7 +69,8 @@ class AteIdentitySnapshot {
 
   /**
    * The configured environment variable names: a comma-separated list.
-   * Names that are not plain variable names are ignored.
+   * Names that are not plain variable names are ignored, and so are names
+   * a client controls (headerDerived()).
    *
    * @since  COmanage Registry v4.6.0
    * @param  String $list Comma-separated names
@@ -82,12 +83,33 @@ class AteIdentitySnapshot {
     foreach(explode(',', (string)$list) as $n) {
       $n = trim($n);
 
-      if(preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $n)) {
+      if(preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $n) && !self::headerDerived($n)) {
         $ret[] = $n;
       }
     }
 
     return $ret;
+  }
+
+  /**
+   * Whether a variable name is one the web server fills from a client
+   * request header: HTTP_*, also behind any number of REDIRECT_ prefixes.
+   * A responder could put any address there, so it never counts as a
+   * login's email.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  String $name Variable name
+   * @return Boolean
+   */
+
+  public static function headerDerived($name) {
+    $n = strtoupper(trim((string)$name));
+
+    while(strpos($n, self::RedirectPrefix) === 0) {
+      $n = substr($n, strlen(self::RedirectPrefix));
+    }
+
+    return strpos($n, 'HTTP_') === 0;
   }
 
   /**
