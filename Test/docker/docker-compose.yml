@@ -1,0 +1,57 @@
+# Hermetic test environment for the ApplicationTeamEnroller plugin.
+#
+# Stands up a real COmanage Registry (from the CILogon public image) plus a
+# companion Postgres database, and bind-mounts the plugin-under-test (this
+# checkout) at app/Plugin/ApplicationTeamEnroller. Registry's own
+# `Console/cake database` applies the plugin's schema.xml, so tests run against
+# the pull request's code and table shape.
+#
+# Harness copied from the Oa4mpClient plugin (KTD15).
+
+# An explicit project name keeps this suite's containers and volumes apart from
+# any other plugin's suite that also lives in a directory named "docker".
+name: ate-hermetic-tests
+
+services:
+  comanage-registry-database:
+    # Digest-pinned so a pass or fail is attributable to the pull request's code
+    # rather than image drift. Override only deliberately, e.g. when checking a
+    # newer image before bumping the pin here.
+    image: ${ATE_TEST_DATABASE_IMAGE:-postgres@sha256:2fdfb9b432d4a73bd3eea3d989752c1e669b68d502347e0bfd2cc6d709f3d6b4}
+    environment:
+      POSTGRES_USER: registry_user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: registry
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U registry_user -d registry"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+  comanage-registry:
+    # Digest-pinned. Confirmed on 2026-09-29 to run COmanage Registry 4.6.1
+    # (app/Config/VERSION), PHP 8.4.24. Bumping this pin is an explicit,
+    # reviewable change: confirm the new image is still Registry 4.6.x first
+    # (see Test/README.md). Set ATE_TEST_REGISTRY_IMAGE to try another image
+    # without editing the file.
+    #
+    # Pulled from the public GHCR copy of the CILogon image rather than
+    # public.ecr.aws, whose anonymous pulls from Actions runners fail
+    # intermittently with "toomanyrequests: Data limit exceeded".
+    image: ${ATE_TEST_REGISTRY_IMAGE:-ghcr.io/cilogon/comanage-registry@sha256:e41c82a9148757bd310351ffdac8f3bdd10a6a37c8865f9c98ceb7bc319279d9}
+    depends_on:
+      comanage-registry-database:
+        condition: service_healthy
+    environment:
+      COMANAGE_REGISTRY_DATASOURCE: Database/Postgres
+      COMANAGE_REGISTRY_DATABASE_HOST: comanage-registry-database
+      COMANAGE_REGISTRY_DATABASE: registry
+      COMANAGE_REGISTRY_DATABASE_USER: registry_user
+      COMANAGE_REGISTRY_DATABASE_USER_PASSWORD: password
+    volumes:
+      # The plugin-under-test. The image does not bundle this plugin, so the
+      # mount adds it rather than overlaying a released copy.
+      - ../../:/srv/comanage-registry/app/Plugin/ApplicationTeamEnroller
+    # Tests do not need the Apache web server; keep the container idle and drive
+    # schema setup and the thin test runner via `docker compose exec`.
+    entrypoint: ["sleep", "infinity"]

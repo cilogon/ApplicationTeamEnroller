@@ -1,0 +1,16 @@
+# gitleaks configuration for the secret-scan job in
+# .github/workflows/hermetic-tests.yml.
+#
+# The scan runs over the full history, so a value that was ever committed keeps
+# being found no matter how the working tree changes today.
+
+# Add to the built-in ruleset rather than replacing it. Without this block the
+# scanner keeps exiting zero while detecting nothing: a green gate guarding
+# nothing at all.
+[extend]
+useDefault = true
+
+# No allowlist. If one is ever needed, exempt the literal value with `regexes`
+# rather than a `paths` or `commits` entry: gitleaks ORs allowlist conditions
+# together, so a path or commit entry would exempt every rule for that file or
+# commit, including a genuine credential added there later.
