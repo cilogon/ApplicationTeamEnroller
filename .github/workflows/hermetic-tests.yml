@@ -42,6 +42,25 @@ jobs:
         # digest in Test/docker/docker-compose.yml.
         run: Test/run.sh
 
+  hermetic-suite-mysql:
+    name: Hermetic suite (MySQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out the plugin under test
+        uses: actions/checkout@v4
+
+      - name: Run the hermetic suite on MySQL
+        # The same suite against MySQL instead of Postgres. Registry
+        # deployments run on either, and CakePHP 2 renders some statements
+        # differently on MySQL, so a change that passes only on Postgres is
+        # not verified. The MySQL image is pinned by digest in
+        # Test/docker/docker-compose.mysql.yml.
+        env:
+          ATE_TEST_DB: mysql
+        run: Test/run.sh
+
   secret-scan:
     name: Secret scan
     runs-on: ubuntu-latest

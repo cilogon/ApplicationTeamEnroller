@@ -1595,7 +1595,7 @@ class AteEnrollmentRequest extends ApplicationTeamEnrollerAppModel {
       $ok = $this->AteEnrollmentRequestTeam->updateAll(
         array('outcome' => $this->getDataSource()->value($outcome),
               'modified' => $this->getDataSource()->value($now)),
-        array('id' => $t['id'])
+        array('AteEnrollmentRequestTeam.id' => $t['id'])
       );
 
       if(!$ok) {
