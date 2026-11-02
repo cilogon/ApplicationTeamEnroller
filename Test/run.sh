@@ -170,7 +170,10 @@ echo "==> Verifying the suite ran the expected number of tests..."
 #       newcomer, no draft past expiry, the default login identifier type,
 #       HTTP_ email variables rejected and ignored, PHP Errors rolling back
 #       approve and commitResponse, retired and unset-approval routing.
-min_tests_run=241
+#  243  Issue #2 -- the rendered respond form's choices reach
+#       submitResponse() (AteResponsesControllerTest), and every dotted Form
+#       field name in View/ names its model (ViewFieldNamesTest).
+min_tests_run=243
 tests_run="$(sed -n 's/^\([0-9][0-9]*\) tests run, [0-9][0-9]* failed\.$/\1/p' \
   <<< "$suite_tail" | head -n 1)"
 if [ -z "$tests_run" ]; then

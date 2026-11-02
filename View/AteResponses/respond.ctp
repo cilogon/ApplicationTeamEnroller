@@ -68,7 +68,9 @@
           $args['value'] = $r['draft_choice'] ? '1' : '0';
         }
 
-        print $this->Form->input('choices.' . $r['id'], $args);
+        // Name the model: Cake does not scope a two-part 'choices.<id>' to
+        // AteResponse, and submitResponse() reads only data[AteResponse]
+        print $this->Form->input('AteResponse.choices.' . $r['id'], $args);
       ?>
     </div>
   </li>
