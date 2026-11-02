@@ -129,6 +129,36 @@ class AteInvitationsController extends StandardController {
   }
 
   /**
+   * Registry's check that the record in the URL belongs to the current CO.
+   * withdraw() takes a request ID, so it checks the request's CO rather than
+   * an invitation with the same number; every other action keeps Registry's
+   * check of an invitation ID.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @return Boolean True if the record belongs to the current CO
+   * @throws InvalidArgumentException If the request does not exist or is in another CO
+   */
+
+  public function verifyRequestedId() {
+    if($this->action !== 'withdraw' || empty($this->request->params['pass'][0])) {
+      return parent::verifyRequestedId();
+    }
+
+    if(empty($this->cur_co)) {
+      throw new LogicException(_txt('er.co.specify'));
+    }
+
+    $id = $this->request->params['pass'][0];
+    $coId = $this->AteInvitation->AteEnrollmentRequest->findCoForRecord($id);
+
+    if((int)$coId !== (int)$this->cur_co['Co']['id']) {
+      throw new InvalidArgumentException(_txt('er.co.mismatch', array('AteEnrollmentRequest', $id)));
+    }
+
+    return true;
+  }
+
+  /**
    * List invitations (R34): every invitation of the CO for a CO
    * administrator; otherwise those that include an application the user
    * administers, and those the user sent.

@@ -54,6 +54,50 @@ class SchemaAndAssociationsTest extends AteTestCase {
   }
 
   /**
+   * Before every action with a record ID, Registry's
+   * AppController::verifyRequestedId() asks the controller's model which CO
+   * the record belongs to. AppModel::findCoForRecord() answers only for
+   * models whose validation names one of the keys below, and otherwise
+   * throws "Unable to find CO", which renders as an internal error. So every
+   * plugin controller's model must have such a key or its own
+   * findCoForRecord().
+   *
+   * This checks the model each controller serves. An action whose ID names a
+   * different model (AteInvitationsController::withdraw() takes a request
+   * ID) needs its own check, tested where that action is.
+   */
+  public function testEveryControllerModelCanFindItsCo() {
+    // The keys AppModel::findCoForRecord() (Registry 4.6) knows
+    $coKeys = array('co_id', 'co_person_id', 'co_person_role_id', 'org_identity_id',
+                    'organization_id', 'organization_source_id', 'org_identity_source_id',
+                    'co_enrollment_flow_wedge_id', 'co_identifier_validator_id',
+                    'co_provisioning_target_id', 'data_filter_id', 'server_id', 'vetting_step_id');
+    $dir = App::pluginPath('ApplicationTeamEnroller') . 'Controller' . DS;
+
+    foreach(glob($dir . '*Controller.php') as $file) {
+      $class = basename($file, '.php');
+
+      // The app controller serves no model, the enrollment flow wedge runs
+      // inside Registry's CoPetitionsController with its model, and the
+      // response pages take a link token, not a record ID, and replace the
+      // check (AteResponsesController::verifyRequestedId())
+      if(in_array($class, array('ApplicationTeamEnrollerAppController',
+                                'ApplicationTeamEnrollerCoPetitionsController',
+                                'AteResponsesController'), true)) {
+        continue;
+      }
+
+      $modelName = Inflector::classify(substr($class, 0, -strlen('Controller')));
+      $model = $this->model('ApplicationTeamEnroller.' . $modelName);
+      $own = (new ReflectionMethod($model, 'findCoForRecord'))->getDeclaringClass()->getName() === $modelName;
+      $keyed = (bool)array_intersect($coKeys, array_keys((array)$model->validate));
+
+      $this->assertTrue($own || $keyed, "$class serves $modelName, for which Registry cannot find a record's CO: "
+                                       . "give $modelName a findCoForRecord()");
+    }
+  }
+
+  /**
    * Co owns the settings and applications; CoGroup references research teams
    * without cascading; the audit models are never listed, so core deletes
    * never reach them.

@@ -203,7 +203,11 @@ echo "==> Verifying the suite ran the expected number of tests..."
 #       reports a claim another connection took as lost
 #       (ConditionalUpdateTest), and saving the same draft twice at once
 #       succeeds (AteResponsesControllerTest); both legs must pass.
-min_tests_run=248
+#  252  Registry's record check finds a request's CO for the request pages
+#       and withdraw, and refuses unknown requests and a missing CO
+#       (AteEnrollmentRequestsControllerTest); every controller's model can
+#       find its CO (SchemaAndAssociationsTest).
+min_tests_run=252
 tests_run="$(sed -n 's/^\([0-9][0-9]*\) tests run, [0-9][0-9]* failed\.$/\1/p' \
   <<< "$suite_tail" | head -n 1)"
 if [ -z "$tests_run" ]; then
