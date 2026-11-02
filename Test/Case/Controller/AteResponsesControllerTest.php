@@ -400,6 +400,70 @@ class AteResponsesControllerTest extends AteEngineTestCase {
     $this->assertNull(CakeSession::read('ApplicationTeamEnroller.Response.snapshot'), 'snapshot cleared');
   }
 
+  /**
+   * Issue #2: the rendered respond form posts its choices where
+   * submitResponse() reads them. Every other test here builds the POST by
+   * hand, so this one renders respond.ctp and submits what a browser would:
+   * each hidden input and the Accept radio of each application.
+   */
+  public function testRenderedFormAcceptCommits() {
+    $sub = $this->sub('member');
+    $this->login($this->p['p1'], $sub, array(self::Invited));
+    $inv = $this->tokenInvitation(self::Invited, array('A' => array('t1')));
+
+    $this->loginAs($sub, array(self::Invited));
+    $this->land($inv['token']);
+    $page = $this->show();
+    $this->assertEqual('respond', $page->view, 'the respond page is shown');
+
+    $h = $this->harness($this->browserPost($this->renderView($page), '1'));
+    $h->harnessInvoke('respond', array(), 'POST');
+
+    $this->assertEqual('', $h->Flash->last(), 'the rendered form is not refused');
+    $this->assertTrue($this->redirectedTo($h, 'confirmation'), 'confirmation shown');
+    $this->assertEqual('responded', $this->invStatus($inv), 'committed');
+  }
+
+  /** Render the view a harness action chose, without a layout. */
+  private function renderView($h) {
+    App::uses('View', 'View');
+
+    $view = new View($h);
+
+    return $view->render($h->view, false);
+  }
+
+  /**
+   * The request data a browser would post from rendered HTML: every hidden
+   * input, then each radio whose value is $radioValue, in document order.
+   */
+  private function browserPost($html, $radioValue) {
+    preg_match_all('/<input\b[^>]*>/', $html, $tags);
+    $pairs = array();
+
+    foreach($tags[0] as $tag) {
+      $attr = array();
+      preg_match_all('/(\w+)="([^"]*)"/', $tag, $m, PREG_SET_ORDER);
+      foreach($m as $a) {
+        $attr[$a[1]] = html_entity_decode($a[2], ENT_QUOTES);
+      }
+
+      if(!isset($attr['name'], $attr['type'])) {
+        continue;
+      }
+
+      $value = isset($attr['value']) ? $attr['value'] : '';
+
+      if($attr['type'] === 'hidden' || ($attr['type'] === 'radio' && $value === $radioValue)) {
+        $pairs[] = rawurlencode($attr['name']) . '=' . rawurlencode($value);
+      }
+    }
+
+    parse_str(implode('&', $pairs), $posted);
+
+    return isset($posted['data']) ? $posted['data'] : array();
+  }
+
   /** AE5 (decline half): a newcomer who declines everything is committed and no CoPerson exists. */
   public function testNewcomerDeclineAllCommitsWithoutPerson() {
     $inv = $this->tokenInvitation(self::Invited, array('A' => array('t1'), 'C' => array('t4')));
