@@ -1,0 +1,30 @@
+# MySQL leg of the hermetic test environment: ATE_TEST_DB=mysql Test/run.sh
+# layers this file over docker-compose.yml.
+#
+# Registry deployments run on Postgres or MySQL, and CakePHP 2 renders some
+# statements differently on each: updateAll() joins the model's associated
+# tables on MySQL only, and MySQL counts changed rather than matched rows.
+# A change that passes on Postgres alone is not verified.
+
+# A separate project name, so the two legs can run side by side.
+name: ate-hermetic-tests-mysql
+
+services:
+  comanage-registry-database:
+    # Digest-pinned MySQL 8.4 LTS, for the same reason as the Postgres pin.
+    # Set ATE_TEST_MYSQL_IMAGE to try another image without editing the file.
+    image: ${ATE_TEST_MYSQL_IMAGE:-mysql@sha256:a0225d1ea6631c8bc2385dc4c2faba17bbf1834ecf369e1659a9a382bd8d5dd7}
+    environment:
+      MYSQL_USER: registry_user
+      MYSQL_PASSWORD: password
+      MYSQL_DATABASE: registry
+      MYSQL_ROOT_PASSWORD: password
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uregistry_user -ppassword --silent"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+
+  comanage-registry:
+    environment:
+      COMANAGE_REGISTRY_DATASOURCE: Database/Mysql

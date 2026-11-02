@@ -2,36 +2,51 @@
 #
 # Single entry command for the ApplicationTeamEnroller hermetic test suite.
 #
-# Brings up a real COmanage Registry + Postgres with the plugin-under-test
+# Brings up a real COmanage Registry + its database with the plugin-under-test
 # mounted at app/Plugin/ApplicationTeamEnroller, creates the schema via
 # Registry's native `cake database` (which applies the plugin's schema.xml),
 # runs the thin-runner test suite, and exits with the suite's status. Usable by
 # a developer, in CI, and by an agent.
 #
-# Usage: Test/run.sh
+# Usage: Test/run.sh                  (Postgres, the default)
+#        ATE_TEST_DB=mysql Test/run.sh (MySQL)
+#
+# Registry deployments run on either database, and CakePHP 2 renders some
+# statements differently on each (for example updateAll() joins associated
+# tables on MySQL only), so a change is not verified until both legs pass.
 set -euo pipefail
 
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$TEST_DIR/docker"
+
+ate_test_db="${ATE_TEST_DB:-postgres}"
+case "$ate_test_db" in
+  postgres) compose=(docker compose -f docker-compose.yml) ;;
+  mysql)    compose=(docker compose -f docker-compose.yml -f docker-compose.mysql.yml) ;;
+  *)
+    echo "==> ERROR: ATE_TEST_DB must be postgres or mysql, not '$ate_test_db'." >&2
+    exit 2
+    ;;
+esac
 
 # Captured suite output, so the sentinel check below has something to grep.
 suite_log="$(mktemp)"
 
 cleanup() {
   rm -f "$suite_log"
-  docker compose down -v >/dev/null 2>&1 || true
+  "${compose[@]}" down -v >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
-echo "==> Bringing up Registry + Postgres..."
-docker compose up -d
+echo "==> Bringing up Registry + $ate_test_db..."
+"${compose[@]}" up -d
 
 echo "==> Creating schema (applies the plugin schema via cake database)..."
 # `cake database`'s exit code is not trustworthy: it can return success while
 # emitting a non-fatal "Possibly failed to update database schema" warning.
 # Print its output instead of discarding it, and prove the plugin's tables
 # actually exist below rather than trusting this exit code alone.
-docker compose exec -T comanage-registry bash -c '
+"${compose[@]}" exec -T comanage-registry bash -c '
   mkdir -p /srv/comanage-registry/local/Config
   source /usr/local/lib/comanage_utils.sh
   comanage_utils::prepare_database_config
@@ -45,12 +60,20 @@ echo "==> Verifying the plugin's tables actually exist..."
 # the same change; HarnessSelfTest::testRunShTableFloorMatchesSchema fails
 # until the two agree.
 min_plugin_tables=8
-plugin_table_count="$(docker compose exec -T comanage-registry-database \
-  psql -U registry_user -d registry -tAc \
-  "SELECT count(*) FROM information_schema.tables
-    WHERE table_schema = 'public'
+plugin_tables_sql="SELECT count(*) FROM information_schema.tables
+    WHERE table_schema = %s
       AND (table_name = 'cm_application_team_enrollers'
-           OR table_name LIKE 'cm\_ate\_%')")"
+           OR table_name LIKE 'cm\\_ate\\_%%')"
+if [ "$ate_test_db" = mysql ]; then
+  # shellcheck disable=SC2059
+  plugin_table_count="$("${compose[@]}" exec -T comanage-registry-database \
+    mysql -uregistry_user -ppassword -N -B registry \
+    -e "$(printf "$plugin_tables_sql" "'registry'")" 2>/dev/null)"
+else
+  # shellcheck disable=SC2059
+  plugin_table_count="$("${compose[@]}" exec -T comanage-registry-database \
+    psql -U registry_user -d registry -tAc "$(printf "$plugin_tables_sql" "'public'")")"
+fi
 plugin_table_count="${plugin_table_count//[[:space:]]/}"
 if [ -z "$plugin_table_count" ] || [ "$plugin_table_count" -lt "$min_plugin_tables" ]; then
   echo "==> ERROR: expected at least $min_plugin_tables plugin tables" \
@@ -75,7 +98,7 @@ echo "==> Running the thin-runner test suite..."
 # that stopped after three of a hundred tests is indistinguishable from a
 # completed one. Requiring the sentinel closes that hole mechanically.
 suite_status=0
-docker compose exec -T comanage-registry bash -c '
+"${compose[@]}" exec -T comanage-registry bash -c '
   cd /srv/comanage-registry/app && ./Console/cake ApplicationTeamEnroller.Ate_test' 2>&1 \
   | tee "$suite_log" || suite_status=$?
 
@@ -176,7 +199,11 @@ echo "==> Verifying the suite ran the expected number of tests..."
 #  245  Issue #3 -- no CO main menu entries for a login in no CO
 #       (HarnessSelfTest) or, on the respond page, not in the invitation's CO
 #       (AteResponsesControllerTest).
-min_tests_run=245
+#  248  MySQL -- conditionalUpdate() qualifies its condition keys and
+#       reports a claim another connection took as lost
+#       (ConditionalUpdateTest), and saving the same draft twice at once
+#       succeeds (AteResponsesControllerTest); both legs must pass.
+min_tests_run=248
 tests_run="$(sed -n 's/^\([0-9][0-9]*\) tests run, [0-9][0-9]* failed\.$/\1/p' \
   <<< "$suite_tail" | head -n 1)"
 if [ -z "$tests_run" ]; then

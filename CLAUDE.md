@@ -54,7 +54,9 @@ Follow the standard Registry plugin layout:
 - Lint changed PHP with `php -l <file>` before treating a change as complete.
 - Run the plugin's automated test suite before treating a change as complete.
   The suite exists under `Test/`, and `Test/run.sh` (Docker: a pinned Registry
-  4.6.x image plus Postgres) is the gate: it must end with the suite passing.
+  4.6.x image plus Postgres, or MySQL with `ATE_TEST_DB=mysql`) is the gate:
+  both legs must end with the suite passing, because Registry deployments run
+  on either database.
   CakePHP 2.x's PHPUnit-based `cake test` does not run on PHP 8.x, so the suite
   uses a thin CakePHP-shell runner copied from the Oa4mpClient plugin; see
   `Test/README.md` for the harness and how to write tests.

@@ -18,11 +18,17 @@ class ApplicationTeamEnrollerAppModel extends AppModel {
    * match $conditions, which must name only $Model's own columns so Cake
    * issues a single UPDATE rather than a SELECT first.
    *
+   * Portable to MySQL, where Cake's updateAll() joins $Model's belongsTo
+   * tables: a bare column key is qualified by $Model's alias, or a shared
+   * column such as id would be ambiguous. MySQL also counts only the rows a
+   * statement changed, so an UPDATE that matched a row already holding
+   * $fields reports none; that counts as the one matched row it is.
+   *
    * @since  COmanage Registry v4.6.0
    * @param  Model   $Model      Model to update
    * @param  Array   $fields     Column => PHP value (null, Boolean, Integer, or String)
    * @param  Array   $conditions Column => value
-   * @return Boolean             True if exactly one row changed
+   * @return Boolean             True if exactly one row matched
    * @throws RuntimeException If the update fails
    */
 
@@ -42,11 +48,33 @@ class ApplicationTeamEnrollerAppModel extends AppModel {
       }
     }
 
-    if(!$Model->updateAll($set, $conditions)) {
+    $where = array();
+
+    foreach($conditions as $col => $v) {
+      $where[(is_string($col) && strpos($col, '.') === false) ? $Model->alias . '.' . $col : $col] = $v;
+    }
+
+    if(!$Model->updateAll($set, $where)) {
       throw new RuntimeException(_txt('er.db.save-a', array($Model->alias)));
     }
 
-    return $Model->getAffectedRows() === 1;
+    $affected = $Model->getAffectedRows();
+
+    if($affected === 0 && $dbc instanceof Mysql) {
+      // MySQL changed no row. A row that matched but already held $fields
+      // still satisfies $conditions; a claim always changes a column of its
+      // $conditions, so a lost claim still counts no row here. The count must
+      // be a locking read: a plain one inside a transaction sees the
+      // transaction's first view, where a row another connection has since
+      // claimed still matches.
+      $rows = $dbc->fetchAll('SELECT COUNT(*) AS matched FROM ' . $dbc->fullTableName($Model)
+                             . ' AS ' . $dbc->name($Model->alias)
+                             . $dbc->conditions($where, true, true, $Model) . ' FOR UPDATE',
+                             array(), array('cache' => false));
+      $affected = (int)Hash::get((array)$rows, '0.0.matched');
+    }
+
+    return $affected === 1;
   }
 
   /**

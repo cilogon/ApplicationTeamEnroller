@@ -311,6 +311,25 @@ class AteResponsesControllerTest extends AteEngineTestCase {
     $this->assertTrue((bool)$this->requestRow($inv['req']['C'])['draft_choice'], 'C draft unchanged');
   }
 
+  /**
+   * Saving the same draft again at once succeeds. MySQL counts only rows a
+   * statement changed, so a rewrite with identical values in the same second
+   * reports no affected row; that is not a lost race.
+   */
+  public function testSaveDraftAgainWithSameChoicesSucceeds() {
+    $inv = $this->invitation(self::Invited, array('A' => array('t1'), 'C' => array('t4')));
+    $choices = $this->acceptAll($inv);
+
+    // Start at the top of a second, so both saves stamp the same modified
+    // time and the second one changes nothing
+    usleep((int)((1 - fmod(microtime(true), 1)) * 1000000) + 1000);
+
+    $this->assertTrue($this->Req->saveDraft($this->coId, $inv['id'], $choices), 'first save');
+    $this->assertTrue($this->Req->saveDraft($this->coId, $inv['id'], $choices), 'the same draft saved again');
+    $this->assertFalse(ConnectionManager::getDataSource('default')->inTransaction(), 'no transaction left open');
+    $this->assertTrue((bool)$this->requestRow($inv['req']['A'])['draft_choice'], 'A draft kept');
+  }
+
   /** A live link stores only the token's hash and sends the user to respond(). */
   public function testLandingStoresTokenHashAndSendsToRespond() {
     $inv = $this->tokenInvitation(self::Invited, array('A' => array('t1')));

@@ -67,11 +67,17 @@ class ExpireInvitationsJobTest extends AtePetitionTestCase {
 
     // Jobs, and their history records (which can name the CO's people)
     $cos = (int)$this->coId . ', ' . (int)$this->otherCoId;
-    $this->fx->query('DELETE FROM cm_co_job_history_records WHERE co_job_id IN (SELECT id FROM cm_co_jobs'
-                     . ' WHERE co_id IN (' . $cos . '))');
-    $this->fx->query('DELETE FROM cm_co_jobs WHERE co_id IN (' . $cos . ')');
+    $this->fx->relaxForeignKeys();
 
-    parent::tearDown();
+    try {
+      $this->fx->query('DELETE FROM cm_co_job_history_records WHERE co_job_id IN (SELECT id FROM cm_co_jobs'
+                       . ' WHERE co_id IN (' . $cos . '))');
+      $this->fx->query('DELETE FROM cm_co_jobs WHERE co_id IN (' . $cos . ')');
+
+      parent::tearDown();
+    } finally {
+      $this->fx->restoreForeignKeys();
+    }
   }
 
   // ---------------------------------------------------------------------

@@ -7,8 +7,9 @@ its live-server tier. See KTD15 and U1 in
 
 ## Environment
 
-The hermetic environment is a real COmanage Registry plus a Postgres database,
-with this checkout mounted as the plugin. Validated on 2026-09-29:
+The hermetic environment is a real COmanage Registry plus a Postgres or MySQL
+database, with this checkout mounted as the plugin. Validated on 2026-09-29
+(MySQL leg added 2026-11-02):
 
 - **Image:** `ghcr.io/cilogon/comanage-registry@sha256:e41c82a9148757bd310351ffdac8f3bdd10a6a37c8865f9c98ceb7bc319279d9`,
   a public GHCR copy of `public.ecr.aws/cilogon/comanage-registry`. It runs
@@ -18,8 +19,17 @@ with this checkout mounted as the plugin. Validated on 2026-09-29:
   bundle this plugin, so the mount adds it. In production the plugin lives at
   `local/Plugin/ApplicationTeamEnroller`; the view symlinks
   (`../../../../../app/View/Standard/...`) resolve from both places.
-- **Database:** Postgres, a companion container named
-  `comanage-registry-database`.
+- **Database:** Postgres by default, or MySQL 8.4 with `ATE_TEST_DB=mysql`
+  (`docker-compose.mysql.yml`, layered over `docker-compose.yml`), a
+  companion container named `comanage-registry-database`. Both images are
+  pinned by digest. Registry deployments run on either, and CakePHP 2 renders
+  some statements differently on MySQL: `updateAll()` joins the model's
+  associated tables, so a bare condition key like `id` is ambiguous, and an
+  UPDATE reports only the rows it changed. A change is verified only when both
+  legs pass. Test SQL stays portable: `AteFixtures` quotes columns through the
+  datasource, avoids `RETURNING` on MySQL, and teardown wraps its deletes in
+  `relaxForeignKeys()`/`restoreForeignKeys()`, because MySQL enforces foreign
+  keys on every statement.
 - **Schema:** Registry's own `./Console/cake database` loads each plugin's
   `Config/Schema/schema.xml`, so the checkout's tables are created by
   Registry's native mechanism.
@@ -36,12 +46,14 @@ One command brings up the environment, creates the schema, runs the suite, and
 tears everything down, exiting non-zero if any gate fails:
 
 ```bash
-Test/run.sh
+Test/run.sh                  # Postgres
+ATE_TEST_DB=mysql Test/run.sh # MySQL
 ```
 
-It needs Docker with the compose plugin. The compose project is named
-`ate-hermetic-tests`, so it does not collide with another plugin's suite on the
-same machine.
+It needs Docker with the compose plugin. The compose projects are named
+`ate-hermetic-tests` and `ate-hermetic-tests-mysql`, so the two legs can run
+side by side and do not collide with another plugin's suite on the same
+machine.
 
 ## The gates
 
@@ -229,8 +241,9 @@ message that the red proof was done.
 ## Continuous integration
 
 `.github/workflows/hermetic-tests.yml` runs `Test/run.sh` on every pull request
-and on pushes to `main`. It uses no repository secrets, so it also runs on pull
-requests from forks. A second job runs gitleaks over the full history.
+and on pushes to `main`, once on Postgres ("Hermetic suite") and once on MySQL
+("Hermetic suite (MySQL)"). It uses no repository secrets, so it also runs on
+pull requests from forks. A further job runs gitleaks over the full history.
 
 That scan is config-dependent, and a disarmed scanner looks exactly like a
 clean repository. `.gitleaks.toml` keeps `[extend] useDefault = true`, because a

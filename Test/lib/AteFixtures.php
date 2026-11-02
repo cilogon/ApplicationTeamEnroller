@@ -8,8 +8,10 @@
  * order and satisfy the schema's foreign keys without the test having to
  * track ids itself.
  *
- * The hermetic environment is Postgres (Test/docker/docker-compose.yml), so
- * INSERT ... RETURNING id is used to recover generated ids.
+ * The hermetic environment runs on Postgres by default and on MySQL with
+ * ATE_TEST_DB=mysql (Test/run.sh), so the SQL here stays portable: column
+ * names are quoted by the datasource, and a generated id comes from
+ * INSERT ... RETURNING on Postgres and from the last insert id on MySQL.
  *
  * Copied from the Oa4mpClient plugin's Oa4mpFixtures (KTD15).
  */
@@ -23,6 +25,9 @@ class AteFixtures {
 
   /** @var array List of array('table' => ..., 'id' => ...) in insertion order. */
   protected $rows = array();
+
+  /** @var Integer Nesting depth of relaxForeignKeys(), shared by the one connection */
+  protected static $relaxDepth = 0;
 
   public function __construct() {
     $this->db = ConnectionManager::getDataSource('default');
@@ -39,14 +44,19 @@ class AteFixtures {
     $cols = array();
     $vals = array();
     foreach($fields as $col => $val) {
-      $cols[] = '"' . $col . '"';
+      $cols[] = $this->db->name($col);
       $vals[] = ($val === null) ? 'NULL' : $this->db->value($val);
     }
 
     $sql = 'INSERT INTO ' . $table . ' (' . implode(', ', $cols) . ') VALUES ('
-      . implode(', ', $vals) . ') RETURNING id';
+      . implode(', ', $vals) . ')';
 
-    $id = $this->scalar($sql);
+    if($this->isMysql()) {
+      $this->db->query($sql);
+      $id = $this->db->lastInsertId();
+    } else {
+      $id = $this->scalar($sql . ' RETURNING id');
+    }
     if($id === null) {
       throw new Exception("fixture insert into $table returned no id");
     }
@@ -493,14 +503,49 @@ class AteFixtures {
    * @param Array $alsoPurge table => WHERE clause, deleted before tracked rows
    */
   public function cleanup($alsoPurge = array()) {
-    foreach($alsoPurge as $table => $where) {
-      $this->db->query('DELETE FROM ' . $table . ' WHERE ' . $where);
-    }
+    $this->relaxForeignKeys();
 
-    foreach(array_reverse($this->rows) as $row) {
-      $this->db->query('DELETE FROM ' . $row['table'] . ' WHERE id = ' . (int)$row['id']);
-    }
+    try {
+      foreach($alsoPurge as $table => $where) {
+        $this->db->query('DELETE FROM ' . $table . ' WHERE ' . $where);
+      }
 
-    $this->rows = array();
+      foreach(array_reverse($this->rows) as $row) {
+        $this->db->query('DELETE FROM ' . $row['table'] . ' WHERE id = ' . (int)$row['id']);
+      }
+
+      $this->rows = array();
+    } finally {
+      $this->restoreForeignKeys();
+    }
+  }
+
+  /**
+   * Whether the hermetic database is MySQL rather than Postgres.
+   *
+   * @return Boolean
+   */
+  public function isMysql() {
+    return $this->db instanceof Mysql;
+  }
+
+  /**
+   * Turn off MySQL's foreign key checks until the matching
+   * restoreForeignKeys(). Teardown deletes the rows a test made in an order
+   * the references do not follow, including rows Registry's changelog
+   * archived to point at a tracked row, and MySQL checks every statement
+   * where Postgres does not. Calls nest; on Postgres both do nothing.
+   */
+  public function relaxForeignKeys() {
+    if($this->isMysql() && self::$relaxDepth++ === 0) {
+      $this->db->query('SET FOREIGN_KEY_CHECKS = 0');
+    }
+  }
+
+  /** End the matching relaxForeignKeys(). */
+  public function restoreForeignKeys() {
+    if($this->isMysql() && --self::$relaxDepth === 0) {
+      $this->db->query('SET FOREIGN_KEY_CHECKS = 1');
+    }
   }
 }

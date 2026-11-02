@@ -149,16 +149,22 @@ abstract class AtePetitionTestCase extends AteEngineTestCase {
     $pts = 'SELECT id FROM cm_co_petitions WHERE co_id IN (' . $cos . ')';
     $ppl = 'SELECT id FROM cm_co_people WHERE co_id IN (' . $cos . ')';
 
-    $this->fx->query('UPDATE cm_ate_invitations SET co_petition_id = NULL WHERE co_id IN (' . $cos . ')');
-    $this->fx->query('DELETE FROM cm_co_petition_history_records WHERE co_petition_id IN (' . $pts . ')');
-    $this->fx->query('DELETE FROM cm_co_petition_attributes WHERE co_petition_id IN (' . $pts . ')');
-    $this->fx->query('DELETE FROM cm_co_petitions WHERE co_id IN (' . $cos . ')');
+    $this->fx->relaxForeignKeys();
 
-    $this->fx->cleanup($this->fx->pluginRowsFor(array($this->coId, $this->otherCoId)) + array(
-      'cm_names' => 'co_person_id IN (' . $ppl . ')',
-      'cm_co_person_roles' => 'co_person_id IN (' . $ppl . ')',
-      'cm_co_people' => 'co_id IN (' . $cos . ')'
-    ));
+    try {
+      $this->fx->query('UPDATE cm_ate_invitations SET co_petition_id = NULL WHERE co_id IN (' . $cos . ')');
+      $this->fx->query('DELETE FROM cm_co_petition_history_records WHERE co_petition_id IN (' . $pts . ')');
+      $this->fx->query('DELETE FROM cm_co_petition_attributes WHERE co_petition_id IN (' . $pts . ')');
+      $this->fx->query('DELETE FROM cm_co_petitions WHERE co_id IN (' . $cos . ')');
+
+      $this->fx->cleanup($this->fx->pluginRowsFor(array($this->coId, $this->otherCoId)) + array(
+        'cm_names' => 'co_person_id IN (' . $ppl . ')',
+        'cm_co_person_roles' => 'co_person_id IN (' . $ppl . ')',
+        'cm_co_people' => 'co_id IN (' . $cos . ')'
+      ));
+    } finally {
+      $this->fx->restoreForeignKeys();
+    }
 
     parent::tearDown();
   }
