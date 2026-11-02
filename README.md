@@ -89,7 +89,9 @@ entries:
   administrators.
 - CO main menu: **Invite Researcher**, **Invitations**, **Decision Queue**.
   Registry shows these to every CO member; each screen checks access itself
-  and refuses users who have no role in it.
+  and refuses users who have no role in it. A login in no CO, such as a
+  first-time researcher answering an invitation, never sees them, and the
+  invitation response pages hide them from anyone not in that CO.
 
 ## Configuration
 

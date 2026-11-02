@@ -38,6 +38,7 @@
 App::uses('ApplicationTeamEnrollerAppController', 'ApplicationTeamEnroller.Controller');
 App::uses('AteIdentitySnapshot', 'ApplicationTeamEnroller.Lib');
 App::uses('AteInvitation', 'ApplicationTeamEnroller.Model');
+App::uses('ApplicationTeamEnroller', 'ApplicationTeamEnroller.Model');
 
 class AteResponsesController extends ApplicationTeamEnrollerAppController {
   // Class name, used by Cake
@@ -84,6 +85,27 @@ class AteResponsesController extends ApplicationTeamEnrollerAppController {
     parent::beforeFilter();
 
     $this->Auth->allow('landing');
+  }
+
+  /**
+   * Build the menus for the CO these pages render in. A login that is not a
+   * member of that CO does not see the plugin's CO main menu entries
+   * (issue #3); ApplicationTeamEnroller::cmPluginMenus() already drops them
+   * for a login in no CO.
+   *
+   * @since  COmanage Registry v4.6.0
+   */
+
+  public function menuContent() {
+    parent::menuContent();
+
+    $coId = empty($this->cur_co['Co']['id']) ? null : (int)$this->cur_co['Co']['id'];
+
+    if($coId !== null && !in_array($coId, ApplicationTeamEnroller::loginCoIds(), true)) {
+      $menu = $this->viewVars['menuContent'];
+      unset($menu['plugins']['ApplicationTeamEnroller']['comain']);
+      $this->set('menuContent', $menu);
+    }
   }
 
   /**

@@ -10,6 +10,8 @@
  * @since         COmanage Registry v4.6.0
  */
 
+App::uses('CakeSession', 'Model/Datasource');
+
 class ApplicationTeamEnroller extends AppModel {
   // Required by COmanage Plugins. Enroller must stay first: Registry's CO
   // duplication reads only the first type (app/Model/AppModel.php).
@@ -59,7 +61,7 @@ class ApplicationTeamEnroller extends AppModel {
 
   public function cmPluginMenus() {
     // CO configuration screens, for CO administrators (A4)
-    return array(
+    $menus = array(
       "coconfig" => array(
         _txt('pl.applicationteamenroller.menu.applications') =>
           array('icon'       => 'apps',
@@ -94,6 +96,35 @@ class ApplicationTeamEnroller extends AppModel {
                 'action'     => 'index')
       )
     );
+
+    // Registry shows comain entries whenever a CO is selected, also to a
+    // login in no CO, such as a researcher answering an invitation (issue #3).
+    // AteResponsesController also hides them from a member of another CO.
+    if(empty(self::loginCoIds())) {
+      unset($menus['comain']);
+    }
+
+    return $menus;
+  }
+
+  /**
+   * The COs the current login is a member of, from the session Registry
+   * builds at login.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @return Array CO IDs (integers)
+   */
+
+  public static function loginCoIds() {
+    $ids = array();
+
+    foreach((array)CakeSession::read('Auth.User.cos') as $c) {
+      if(!empty($c['co_id'])) {
+        $ids[] = (int)$c['co_id'];
+      }
+    }
+
+    return $ids;
   }
 
   /**

@@ -173,7 +173,10 @@ echo "==> Verifying the suite ran the expected number of tests..."
 #  243  Issue #2 -- the rendered respond form's choices reach
 #       submitResponse() (AteResponsesControllerTest), and every dotted Form
 #       field name in View/ names its model (ViewFieldNamesTest).
-min_tests_run=243
+#  245  Issue #3 -- no CO main menu entries for a login in no CO
+#       (HarnessSelfTest) or, on the respond page, not in the invitation's CO
+#       (AteResponsesControllerTest).
+min_tests_run=245
 tests_run="$(sed -n 's/^\([0-9][0-9]*\) tests run, [0-9][0-9]* failed\.$/\1/p' \
   <<< "$suite_tail" | head -n 1)"
 if [ -z "$tests_run" ]; then

@@ -8,6 +8,7 @@
  */
 
 App::uses('ApplicationTeamEnrollersController', 'ApplicationTeamEnroller.Controller');
+App::uses('CakeSession', 'Model/Datasource');
 
 /**
  * The wedge config controller, driven without the dispatcher.
@@ -66,7 +67,10 @@ class HarnessSelfTest extends AteTestCase {
 
     $this->assertEqual(array('ExpireInvitations'), array_keys($model->getAvailableJobs()));
 
+    // The CO main menu entries need a login with a CO membership (issue #3)
+    CakeSession::write('Auth.User.cos', array('Self Test CO' => array('co_id' => 1)));
     $menus = $model->cmPluginMenus();
+    CakeSession::delete('Auth.User.cos');
     $keys = array_keys($menus);
     sort($keys);
     $this->assertEqual(array('coconfig', 'comain'), $keys);
@@ -85,6 +89,21 @@ class HarnessSelfTest extends AteTestCase {
       sort($targets);
       $this->assertEqual($want, $targets, "menu $location");
     }
+  }
+
+  /**
+   * Issue #3: Registry shows every comain plugin link whenever a CO is
+   * selected, even to a login in no CO, such as a researcher answering an
+   * invitation. Such a login gets no comain entries at all.
+   */
+  public function testComainMenusNeedACoMembership() {
+    $model = $this->model('ApplicationTeamEnroller.ApplicationTeamEnroller');
+
+    CakeSession::delete('Auth.User.cos');
+    $menus = $model->cmPluginMenus();
+
+    $this->assertFalse(isset($menus['comain']), 'a login in no CO gets no CO main menu entries');
+    $this->assertTrue(isset($menus['coconfig']), 'the configuration menu is gated by Registry itself');
   }
 
   /**
