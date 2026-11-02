@@ -371,6 +371,45 @@ class AteResponsesControllerTest extends AteEngineTestCase {
                       'the snapshot reaches the invitation only on commit');
   }
 
+  /**
+   * Issue #3: the respond page selects the invitation's CO, and Registry then
+   * shows every comain plugin link. A login that is not in that CO sees none
+   * of the plugin's; a member still does (KTD16).
+   */
+  public function testRespondPageMenuHidesPluginLinksFromNonMembers() {
+    $inv = $this->tokenInvitation(self::Invited, array('A' => array('t1')));
+    $labels = array(
+      _txt('pl.applicationteamenroller.menu.invite'),
+      _txt('pl.applicationteamenroller.menu.invitations'),
+      _txt('pl.applicationteamenroller.menu.queue')
+    );
+
+    $cases = array(
+      'a login in no CO'            => array(null, array()),
+      'a member of another CO only' => array(array('Other CO' => array('co_id' => $this->coId + 100000)), array()),
+      'a member of this CO'         => array(array('This CO' => array('co_id' => $this->coId)), $labels)
+    );
+
+    foreach($cases as $who => $c) {
+      $this->resetRequestState();
+      $this->loginAs($this->sub('menu'), array(self::Invited));
+      if($c[0] !== null) {
+        CakeSession::write('Auth.User.cos', $c[0]);
+      }
+
+      $this->land($inv['token']);
+      $page = $this->show();
+      $this->assertEqual('respond', $page->view, "the respond page is shown to $who");
+
+      // Registry builds the menu in beforeRender, which the harness skips
+      $page->menuContent();
+      $links = retrieve_plugin_menus($page->viewVars['menuContent']['plugins'], 'comain', $this->coId);
+      $shown = array_values(array_intersect($labels, array_keys($links)));
+
+      $this->assertEqual($c[1], $shown, "plugin links in the CO main menu for $who");
+    }
+  }
+
   // ---------------------------------------------------------------------
   // respond(): committing
 
