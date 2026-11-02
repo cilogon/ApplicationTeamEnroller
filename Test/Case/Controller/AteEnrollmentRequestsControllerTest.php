@@ -46,6 +46,106 @@ class AteEnrollmentRequestsControllerTest extends AteEngineTestCase {
     parent::tearDown();
   }
 
+  /**
+   * Registry's check that the record in the URL belongs to the current CO,
+   * which AppController::beforeFilter() runs before every action and the
+   * harness otherwise skips. Returns 'ok' or the exception it threw.
+   */
+  private function verifyId($h, $action, $id) {
+    $h->action = $action;
+    $h->request->params['action'] = $action;
+    $h->request->params['pass'] = array($id);
+
+    try {
+      $h->verifyRequestedId();
+      return 'ok';
+    } catch(Exception $e) {
+      return get_class($e) . ': ' . $e->getMessage();
+    }
+  }
+
+  /** A request in the other CO, for the mismatch half of the CO checks. */
+  private function foreignRequest() {
+    $inv = $this->fx->invitation($this->otherCoId, array(
+      'invited_email'        => self::Invited,
+      'inviter_co_person_id' => $this->p['otherCo']
+    ));
+
+    return $this->fx->enrollmentRequest($inv, $this->app['A']);
+  }
+
+  /**
+   * A request's pages pass Registry's record check, which finds a request's
+   * CO through its invitation; one from another CO is refused. Without
+   * AteEnrollmentRequest::findCoForRecord() every request page failed with
+   * "Unable to find CO".
+   */
+  public function testRequestPagesPassRegistrysRecordCheck() {
+    $inv = $this->invitation(self::Invited, array('A' => array('t1')));
+    $reqId = $inv['req']['A'];
+    $foreign = $this->foreignRequest();
+
+    foreach(array('view', 'approve', 'deny') as $action) {
+      $this->assertEqual('ok', $this->verifyId($this->harness('approverA'), $action, $reqId), "$action of this CO's request");
+      $this->assertEqual('InvalidArgumentException: ' . _txt('er.co.mismatch', array('AteEnrollmentRequest', $foreign)),
+                         $this->verifyId($this->harness('approverA'), $action, $foreign),
+                         "$action of another CO's request");
+    }
+  }
+
+  /**
+   * withdraw() takes a request ID, so Registry's record check must look up a
+   * request, not an invitation with the same number.
+   */
+  public function testWithdrawChecksTheRequestsCo() {
+    $inv = $this->invitation(self::Invited, array('A' => array('t1')));
+    $reqId = $inv['req']['A'];
+    $foreign = $this->foreignRequest();
+
+    $w = AteDecisionWithdrawHarness::harnessBuild('ate_invitations', $this->coId, $this->roles('inviter'));
+    $this->assertEqual('ok', $this->verifyId($w, 'withdraw', $reqId), "this CO's request");
+
+    $w = AteDecisionWithdrawHarness::harnessBuild('ate_invitations', $this->coId, $this->roles('inviter'));
+    $this->assertEqual('InvalidArgumentException: ' . _txt('er.co.mismatch', array('AteEnrollmentRequest', $foreign)),
+                       $this->verifyId($w, 'withdraw', $foreign), "another CO's request");
+
+    $w = AteDecisionWithdrawHarness::harnessBuild('ate_invitations', $this->coId, $this->roles('inviter'));
+    $this->assertEqual('ok', $this->verifyId($w, 'view', $inv['id']), 'other actions still check an invitation');
+  }
+
+  /**
+   * A request ID that matches no request is refused, never answered with no
+   * CO: Registry's check skips its cross-CO comparison when
+   * findCoForRecord() returns nothing. withdraw() with no current CO is a
+   * setup error, as in Registry's own check.
+   */
+  public function testRecordCheckRefusesUnknownRequestsAndMissingCo() {
+    $missing = (int)$this->fx->scalar('SELECT COALESCE(MAX(id), 0) + 1000 FROM cm_ate_enrollment_requests');
+    $notFound = 'InvalidArgumentException: '
+                . _txt('er.notfound', array(_txt('ct.ate_enrollment_requests.1'), $missing));
+
+    $model = $this->model('ApplicationTeamEnroller.AteEnrollmentRequest');
+
+    try {
+      $model->findCoForRecord($missing);
+      $this->fail('findCoForRecord() answered for a request that does not exist');
+    } catch(InvalidArgumentException $e) {
+      $this->assertEqual(_txt('er.notfound', array(_txt('ct.ate_enrollment_requests.1'), $missing)),
+                         $e->getMessage(), 'an unknown request is not found');
+    }
+
+    $this->assertEqual($notFound, $this->verifyId($this->harness('approverA'), 'view', $missing), 'view of an unknown request');
+
+    $w = AteDecisionWithdrawHarness::harnessBuild('ate_invitations', $this->coId, $this->roles('inviter'));
+    $this->assertEqual($notFound, $this->verifyId($w, 'withdraw', $missing), 'withdraw of an unknown request');
+
+    $inv = $this->invitation(self::Invited, array('A' => array('t1')));
+    $w = AteDecisionWithdrawHarness::harnessBuild('ate_invitations', $this->coId, $this->roles('inviter'));
+    $w->cur_co = array();
+    $this->assertEqual('LogicException: ' . _txt('er.co.specify'),
+                       $this->verifyId($w, 'withdraw', $inv['req']['A']), 'withdraw with no current CO');
+  }
+
   /** Roles for person $who; $coAdmin adds the coadmin role. */
   private function roles($who, $coAdmin = false) {
     $roles = array('comember' => true, 'user' => true, 'copersonid' => $this->p[$who]);

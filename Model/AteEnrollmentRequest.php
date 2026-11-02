@@ -145,6 +145,28 @@ class AteEnrollmentRequest extends ApplicationTeamEnrollerAppModel {
   protected $provisioningWasEnabled = false;
 
   /**
+   * Find the CO of a request, through its invitation. Registry's
+   * verifyRequestedId() calls this before every action that takes a request
+   * ID; AppModel's version cannot follow ate_invitation_id.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Integer $id AteEnrollmentRequest ID
+   * @return Integer     CO ID
+   * @throws InvalidArgumentException If the request or its invitation does not exist
+   */
+
+  public function findCoForRecord($id) {
+    $invitationId = $this->field('ate_invitation_id', array('AteEnrollmentRequest.id' => $id));
+    $coId = $invitationId ? $this->AteInvitation->field('co_id', array('AteInvitation.id' => $invitationId)) : null;
+
+    if(!$coId) {
+      throw new InvalidArgumentException(_txt('er.notfound', array(_txt('ct.ate_enrollment_requests.1'), $id)));
+    }
+
+    return $coId;
+  }
+
+  /**
    * Normalize an identity snapshot (KTD5). U8 builds the snapshot on the
    * response page; this is its one shape:
    *
