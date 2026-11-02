@@ -24,8 +24,8 @@ radio `'choices.' . $r['id']` inside `Form->create('AteResponse')`. CakePHP
 posted those radios as `data[choices][<id>]`, while
 `AteResponsesController::submitResponse()` reads only
 `$this->request->data['AteResponse']`. Every submit was therefore refused.
-Reported as cilogon/ApplicationTeamEnroller#2. The fix is on branch
-`fix/respond-form-choice-scope`, merge pending.
+Reported as cilogon/ApplicationTeamEnroller#2 and fixed in
+cilogon/ApplicationTeamEnroller#4.
 
 ## Symptoms
 
@@ -95,3 +95,4 @@ becomes `data[choices][5]`. A name that starts with the model
 ## Related Issues
 
 - cilogon/ApplicationTeamEnroller#2 (Responding to Invitation causes warning)
+- cilogon/ApplicationTeamEnroller#4 (the fix)
