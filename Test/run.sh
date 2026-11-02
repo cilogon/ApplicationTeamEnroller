@@ -207,7 +207,11 @@ echo "==> Verifying the suite ran the expected number of tests..."
 #       and withdraw, and refuses unknown requests and a missing CO
 #       (AteEnrollmentRequestsControllerTest); every controller's model can
 #       find its CO (SchemaAndAssociationsTest).
-min_tests_run=252
+#  254  A newcomer flow must name the CO Person, by a name attribute or an
+#       Authenticate-mode source (AteSettingTest), and an EnvSource in
+#       Authenticate mode gives the newcomer the claimed identity
+#       (ApplicationTeamEnrollerCoPetitionsControllerTest).
+min_tests_run=254
 tests_run="$(sed -n 's/^\([0-9][0-9]*\) tests run, [0-9][0-9]* failed\.$/\1/p' \
   <<< "$suite_tail" | head -n 1)"
 if [ -z "$tests_run" ]; then

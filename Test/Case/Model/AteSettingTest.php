@@ -301,6 +301,7 @@ class AteSettingTest extends AteTestCase {
       $flowId = $this->fx->flow($this->coId, AteFixtures::tag('ate-u4-flow'), array(), false);
       $this->fx->wedge($flowId);
       $this->fx->enrollmentAttribute($flowId, $a);
+      $this->fx->enrollmentAttribute($flowId, array('attribute' => 'p:name:official', 'label' => 'Name', 'required' => 1));
 
       $this->assertNull($Setting->newcomerFlowProblem($this->coId, $flowId), $label);
     }
@@ -316,6 +317,78 @@ class AteSettingTest extends AteTestCase {
                                             'invitation_lifetime_days' => 14,
                                             'newcomer_co_enrollment_flow_id' => $flowId)));
     $this->assertEqual(array($expected), $Setting->validationErrors['newcomer_co_enrollment_flow_id']);
+  }
+
+  /**
+   * The flow must give the new CoPerson a name: a current Required name
+   * attribute ("p:name", or "i:name" copied to the CO Person), or an
+   * active, undeleted Org Identity Source attached in Authenticate mode (an
+   * EnvSource for CILogon claims) whose pipeline is active, syncs on add,
+   * and syncs Name; without the pipeline the CoPerson gets no name. Without either the CoPerson has no name, and Registry lists it
+   * with none, so it looks missing. A source attached in Identify mode does
+   * not count, and is named: Registry runs it only when email confirmation
+   * is on, which the newcomer flow must not be.
+   */
+  public function testNewcomerFlowNeedsANameSource() {
+    $Setting = $this->model('ApplicationTeamEnroller.AteSetting');
+    $name = _txt('pl.applicationteamenroller.er.newcomer_flow.name');
+    $identify = _txt('pl.applicationteamenroller.er.newcomer_flow.identify');
+
+    // Each flow already collects a role affiliation
+    $cases = array(
+      'role only' => array($name, array(), null),
+      'deleted name' => array($name, array(array('attribute' => 'p:name:official', 'deleted' => true)), null),
+      'not permitted name' => array($name, array(array('attribute' => 'p:name:official', 'required' => -1)), null),
+      'optional name' => array($name, array(array('attribute' => 'p:name:official', 'required' => 0)), null),
+      'authenticate source without a pipeline' => array($name, array(), 'OA-nopipeline'),
+      'authenticate source whose pipeline skips Name' => array($name, array(), 'OA-noname'),
+      'authenticate source whose pipeline does not sync on add' => array($name, array(), 'OA-noadd'),
+      'identify-mode source' => array($identify, array(), 'OI'),
+      'suspended authenticate source' => array($name, array(), 'OA-suspended'),
+      'deleted authenticate source' => array($name, array(), 'OA-deleted'),
+      'org identity name not copied' => array($name, array(array('attribute' => 'i:name:official', 'required' => 1,
+                                                                 'copy_to_coperson' => false)), null),
+      'person name' => array(null, array(array('attribute' => 'p:name:official', 'required' => 1)), null),
+      'org identity name copied' => array(null, array(array('attribute' => 'i:name:official', 'required' => 1,
+                                                            'copy_to_coperson' => true)), null),
+      'authenticate-mode source' => array(null, array(), 'OA'),
+      'identify source and a name' => array(null, array(array('attribute' => 'p:name:official', 'required' => 1)), 'OI')
+    );
+
+    foreach($cases as $label => $c) {
+      list($expected, $attrs, $source) = $c;
+
+      $flowId = $this->fx->flow($this->coId, AteFixtures::tag('ate-u4-flow'), array(), false);
+      $this->fx->wedge($flowId);
+      $this->fx->enrollmentAttribute($flowId);
+
+      foreach($attrs as $a) {
+        $this->fx->enrollmentAttribute($flowId, $a + array('label' => 'Name', 'ordr' => 2));
+      }
+
+      if($source !== null) {
+        $ois = $this->fx->envSourceEnrollment($this->coId, $flowId, substr($source, 0, 2));
+
+        if($source === 'OA-suspended') {
+          $this->fx->query("UPDATE cm_org_identity_sources SET status = 'S' WHERE id = " . (int)$ois);
+        } elseif($source === 'OA-deleted') {
+          $this->fx->query('UPDATE cm_org_identity_sources SET deleted = true WHERE id = ' . (int)$ois);
+        }
+
+        $pipeline = 'UPDATE cm_co_pipelines SET %s WHERE id = (SELECT co_pipeline_id FROM cm_org_identity_sources'
+                    . ' WHERE id = ' . (int)$ois . ')';
+
+        if($source === 'OA-nopipeline') {
+          $this->fx->query('UPDATE cm_org_identity_sources SET co_pipeline_id = NULL WHERE id = ' . (int)$ois);
+        } elseif($source === 'OA-noname') {
+          $this->fx->query(sprintf($pipeline, "sync_coperson_attributes = 'EmailAddress,Identifier'"));
+        } elseif($source === 'OA-noadd') {
+          $this->fx->query(sprintf($pipeline, 'sync_on_add = false'));
+        }
+      }
+
+      $this->assertEqual($expected, $Setting->newcomerFlowProblem($this->coId, $flowId), $label);
+    }
   }
 
   /**

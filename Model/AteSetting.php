@@ -206,6 +206,98 @@ class AteSetting extends ApplicationTeamEnrollerAppModel {
   }
 
   /**
+   * Whether the newcomer flow gives the new CoPerson a name. It gets one
+   * from a Required name attribute ("p:name", or "i:name" copied to the CO
+   * Person; an optional one may be left blank, and an uncopied one names
+   * only the OrgIdentity), or from an Org Identity Source in Authenticate
+   * mode (selectOrgIdentity) whose pipeline syncs Name on add: the petition
+   * links the source's OrgIdentity, and only the pipeline copies its name to
+   * the CO Person. A source in Identify mode runs only in
+   * collectIdentifier, which Registry enables only with email confirmation
+   * (CoEnrollmentFlow::configuredSteps()), so it never runs here. Without a
+   * name the CoPerson is listed with none, and looks missing.
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Integer $flowId CoEnrollmentFlow ID
+   * @return String|null     A message naming the problem, or null if the flow names the CoPerson
+   */
+
+  protected function newcomerNameProblem($flowId) {
+    // Changelog filters these searches to current, undeleted rows.
+    $Attribute = ClassRegistry::init('CoEnrollmentAttribute');
+
+    $args = array();
+    $args['conditions']['CoEnrollmentAttribute.co_enrollment_flow_id'] = $flowId;
+    $args['conditions']['OR'] = array(
+      array('CoEnrollmentAttribute.attribute LIKE' => 'p:name:%'),
+      array('CoEnrollmentAttribute.attribute LIKE' => 'i:name:%',
+            'CoEnrollmentAttribute.copy_to_coperson' => true)
+    );
+    $args['conditions']['CoEnrollmentAttribute.required'] = RequiredEnum::Required;
+    $args['contain'] = false;
+
+    if($Attribute->find('count', $args) > 0) {
+      return null;
+    }
+
+    $Source = ClassRegistry::init('CoEnrollmentSource');
+
+    $args = array();
+    $args['conditions']['CoEnrollmentSource.co_enrollment_flow_id'] = $flowId;
+    $args['contain'] = false;
+
+    $identify = false;
+
+    foreach($Source->find('all', $args) as $es) {
+      $mode = $es['CoEnrollmentSource']['org_identity_mode'];
+
+      if($mode === EnrollmentOrgIdentityModeEnum::OISIdentify) {
+        $identify = true;
+      } elseif($mode === EnrollmentOrgIdentityModeEnum::OISAuthenticate
+                && $this->sourceNamesCoPerson($es['CoEnrollmentSource']['org_identity_source_id'])) {
+        return null;
+      }
+    }
+
+    return _txt('pl.applicationteamenroller.er.newcomer_flow.' . ($identify ? 'identify' : 'name'));
+  }
+
+  /**
+   * Whether an Org Identity Source names the CO Person it enrolls: it is
+   * active, and its pipeline is active, runs on add, and syncs Name
+   * (CoPipeline syncs only the attributes it lists).
+   *
+   * @since  COmanage Registry v4.6.0
+   * @param  Integer $sourceId OrgIdentitySource ID
+   * @return Boolean
+   */
+
+  protected function sourceNamesCoPerson($sourceId) {
+    // Changelog does not filter a lookup by id
+    $Source = ClassRegistry::init('OrgIdentitySource');
+
+    $src = $Source->find('first', array(
+      'conditions' => array('OrgIdentitySource.id' => $sourceId, 'OrgIdentitySource.deleted IS NOT true'),
+      'contain'    => false
+    ));
+
+    if(empty($src['OrgIdentitySource']['co_pipeline_id'])
+       || $src['OrgIdentitySource']['status'] !== SuspendableStatusEnum::Active) {
+      return false;
+    }
+
+    $pipe = $Source->CoPipeline->find('first', array(
+      'conditions' => array('CoPipeline.id' => $src['OrgIdentitySource']['co_pipeline_id'],
+                            'CoPipeline.deleted IS NOT true'),
+      'contain'    => false
+    ));
+
+    return !empty($pipe['CoPipeline']['sync_on_add'])
+           && $pipe['CoPipeline']['status'] === SuspendableStatusEnum::Active
+           && in_array('Name', explode(',', (string)$pipe['CoPipeline']['sync_coperson_attributes']), true);
+  }
+
+  /**
    * Check that an enrollment flow can serve as a CO's newcomer flow.
    *
    * The newcomer flow must admit the researcher's fresh login and hand them
@@ -214,8 +306,9 @@ class AteSetting extends ApplicationTeamEnrollerAppModel {
    * authenticated user, requires no approval and no email verification, uses
    * a match policy other than Self or Select (either would run selectEnrollee
    * before petitionerAttributes), collects a CO Person Role attribute (so
-   * finalize makes the new CoPerson Active), and carries an active wedge of
-   * this plugin.
+   * finalize makes the new CoPerson Active), gives the new CoPerson a name
+   * (a name attribute, or an Org Identity Source in Authenticate mode), and
+   * carries an active wedge of this plugin.
    * Unset approval, verification, and match fields count as off, as Registry
    * treats them.
    *
@@ -278,6 +371,12 @@ class AteSetting extends ApplicationTeamEnrollerAppModel {
 
     if($Attribute->find('count', $args) < 1) {
       return _txt('pl.applicationteamenroller.er.newcomer_flow.role');
+    }
+
+    $problem = $this->newcomerNameProblem($flowId);
+
+    if($problem !== null) {
+      return $problem;
     }
 
     // Changelog filters this search to current, undeleted wedges.
