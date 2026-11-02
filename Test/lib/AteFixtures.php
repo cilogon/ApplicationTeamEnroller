@@ -218,7 +218,8 @@ class AteFixtures {
    * (U4): any authenticated user, no approval, no email verification, no
    * Self or Select match policy, and (unless $roleAttribute is false) a CO
    * Person Role affiliation attribute, without which Registry leaves a new
-   * CoPerson Pending. $overrides sets or adds columns.
+   * CoPerson Pending, and a CO Person name, without which the new CoPerson
+   * has none. $overrides sets or adds columns.
    *
    * co_enrollment_flow_id is the ChangelogBehavior self-reference and must be
    * NULL for a current (non-historical) row.
@@ -239,6 +240,8 @@ class AteFixtures {
 
     if($roleAttribute) {
       $this->enrollmentAttribute($flowId);
+      $this->enrollmentAttribute($flowId, array('attribute' => 'p:name:official', 'label' => 'Name',
+                                                'required' => 1, 'ordr' => 2));
     }
 
     return $flowId;
@@ -485,10 +488,78 @@ class AteFixtures {
       'cm_identifiers' => 'co_group_id IN (' . $grp . ') OR org_identity_id IN (' . $oid . ')'
                           . ' OR co_person_id IN (' . $ppl . ')',
       'cm_email_addresses' => 'org_identity_id IN (' . $oid . ') OR co_person_id IN (' . $ppl . ')',
+      // An Org Identity Source copies the OrgIdentity's names onto it
+      'cm_names' => 'org_identity_id IN (' . $oid . ') OR co_person_id IN (' . $ppl . ')',
+      'cm_org_identity_source_records' => 'org_identity_id IN (' . $oid . ')',
       'cm_co_org_identity_links' => 'org_identity_id IN (' . $oid . ') OR co_person_id IN (' . $ppl . ')',
       'cm_org_identities' => 'co_id IN (' . $cos . ')',
       'cm_co_groups' => 'co_id IN (' . $cos . ')'
     );
+  }
+
+  /**
+   * Attach an EnvSource Org Identity Source to an enrollment flow, the way a
+   * CO wires CILogon's OIDC claims into self-signup: the source reads the
+   * REDIRECT_OIDC_CLAIM_* variables, and its pipeline matches on email.
+   *
+   * @param  Integer $coId   CO ID
+   * @param  Integer $flowId CoEnrollmentFlow ID
+   * @param  String  $mode   EnrollmentOrgIdentityModeEnum value ('OA' Authenticate, 'OI' Identify)
+   * @return Integer         OrgIdentitySource ID
+   */
+  public function envSourceEnrollment($coId, $flowId, $mode) {
+    $pipeline = $this->insert('cm_co_pipelines', array(
+      'co_id' => $coId,
+      'name' => 'pipeline ' . self::tag('envsource'),
+      'status' => 'A',
+      'match_strategy' => 'EA',
+      'sync_on_add' => true,
+      'sync_on_update' => true,
+      'sync_on_delete' => false,
+      'sync_coperson_attributes' => 'Address,AdHocAttribute,EmailAddress,Name,Identifier,TelephoneNumber,Url',
+      'create_role' => false,
+      'establish_clusters' => false,
+      'revision' => 0,
+      'deleted' => false,
+      'co_pipeline_id' => null
+    ));
+
+    $ois = $this->insert('cm_org_identity_sources', array(
+      'co_id' => $coId,
+      'description' => 'CILogon OIDC Claims ' . self::tag('envsource'),
+      'plugin' => 'EnvSource',
+      'co_pipeline_id' => $pipeline,
+      'status' => 'A',
+      'sync_mode' => 'M',
+      'hash_source_record' => false,
+      'revision' => 0,
+      'deleted' => false,
+      'org_identity_source_id' => null
+    ));
+
+    $this->insert('cm_env_sources', array(
+      'org_identity_source_id' => $ois,
+      'duplicate_mode' => 'SI',
+      'sp_type' => 'SH',
+      'env_name_given' => 'REDIRECT_OIDC_CLAIM_given_name',
+      'env_name_family' => 'REDIRECT_OIDC_CLAIM_family_name',
+      'env_mail' => 'REDIRECT_OIDC_CLAIM_email',
+      'env_identifier_oidcsub' => 'REDIRECT_OIDC_CLAIM_sub',
+      'env_identifier_oidcsub_login' => true,
+      'env_identifier_sorid' => 'REDIRECT_OIDC_CLAIM_sub'
+    ));
+
+    $this->insert('cm_co_enrollment_sources', array(
+      'co_enrollment_flow_id' => $flowId,
+      'org_identity_source_id' => $ois,
+      'org_identity_mode' => $mode,
+      'ordr' => 1,
+      'revision' => 0,
+      'deleted' => false,
+      'co_enrollment_source_id' => null
+    ));
+
+    return $ois;
   }
 
   /** A unique, traceable tag for one test's fixture rows. */

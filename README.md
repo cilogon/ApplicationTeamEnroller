@@ -206,9 +206,28 @@ and names the first one that fails.
 | **Email Confirmation Mode** is **None**. | The plugin compares the login's email with the invited address itself. A confirmation step would interrupt the flow, and Registry attaches the login itself only when confirmation is on, so the plugin attaches it instead. |
 | **Identity Matching** policy is not **Self** or **Select**. | Either policy runs a matching step before the one where the plugin binds the petition to the invitation. The plugin decides separately whether the login belongs to an existing person. |
 | At least one **CO Person Role** attribute (an `r:` attribute such as Affiliation) is collected and not Not Permitted. | Registry makes a new CO Person Active only through a CO Person Role. Without one the newcomer stays Pending, and a Pending person gets nothing from group provisioning. |
+| The flow gives the new CO Person a **name**: a **Required** CO Person Name attribute (or an Organizational Identity Name attribute with Copy To CO Person on), or an active Organizational Identity Source attached in **Authenticate** mode whose pipeline is active, syncs on add, and syncs **Name**. | Without a name the new CO Person and its OrgIdentity have none, so Registry lists them with a blank name and they look missing. A source attached in **Identify** mode does not count: Registry runs Identify mode only when email confirmation is on, which this flow must not be. |
 | An **active wedge of this plugin** is attached (Enrollment Flow > Attach Enrollment Flow Wedges, plugin ApplicationTeamEnroller). | The wedge checks that the petition came from a live invitation and the same login, binds the petition to the invitation, attaches the login, commits the response, and sends the researcher to the plugin's confirmation page. Without it, nothing links the new person to their invitation. The wedge has no settings of its own. |
 
 Also make sure the flow is Active.
+
+To take the newcomer's name, email, and identifiers from their CILogon login
+rather than from a form, attach an EnvSource Organizational Identity Source
+that reads the OIDC claims (for example `REDIRECT_OIDC_CLAIM_given_name`,
+`REDIRECT_OIDC_CLAIM_family_name`, `REDIRECT_OIDC_CLAIM_email`, and
+`REDIRECT_OIDC_CLAIM_sub` for the `oidcsub` login Identifier) in
+**Authenticate** mode (Enrollment Flow > Attach Organizational Identity
+Sources), with a pipeline that syncs on add and syncs Name and Email
+Address: the petition links the OrgIdentity the source creates to the new CO
+Person, and the pipeline copies its name, email, and identifiers to it.
+Without the pipeline the CO Person gets none of them. This plugin reuses the
+source's OrgIdentity for the login instead of creating another. The flow
+still needs its CO Person Role attribute.
+
+The plugin checks the flow again each time it hands a newcomer to it, so a
+flow edited after it was saved here (for example a Name attribute deleted)
+stops the newcomer with an explanation rather than creating a CO Person
+without a name.
 
 Use this flow only as the newcomer flow. The wedge's checks are a front door,
 not a guarantee: Registry lets a user skip every plugin step (a

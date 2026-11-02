@@ -142,6 +142,66 @@ class ApplicationTeamEnrollerCoPetitionsControllerTest extends AtePetitionTestCa
   // start refuses petitions without a live invitation (R21, KTD11)
 
   /** A flow start with no session binding is refused before any petition exists. */
+  /**
+   * The newcomer flow can take its identity from CILogon's OIDC claims: an
+   * EnvSource attached in Authenticate mode, with a pipeline, and no name or
+   * email attribute on the flow (registry-dev's configuration). The newcomer
+   * gets one CoPerson carrying the claimed name, email, and identifiers,
+   * linked to the source's OrgIdentity, which also holds the login.
+   */
+  public function testEnvSourceAuthenticateGivesNewcomerTheClaimedIdentity() {
+    $this->fx->query('UPDATE cm_co_enrollment_attributes SET deleted = true WHERE id = ' . (int)$this->nameAttrId);
+    $this->nameAttrId = null;
+    $this->fx->query("UPDATE cm_ate_settings SET login_identifier_type = 'oidcsub' WHERE co_id = " . (int)$this->coId);
+    $ois = $this->fx->envSourceEnrollment($this->coId, $this->flowId, 'OA');
+
+    $inv = $this->tokenInvitation(self::Invited, array('A' => array('t1')));
+    $sub = $this->sub('claimed');
+    $this->loginAs($sub, array(self::Invited));
+
+    foreach(array('given_name' => 'Pat', 'family_name' => 'Claimed', 'email' => self::Invited, 'sub' => $sub) as $k => $v) {
+      $_SERVER['REDIRECT_OIDC_CLAIM_' . $k] = $v;
+      putenv('REDIRECT_OIDC_CLAIM_' . $k . '=' . $v);
+    }
+
+    $before = $this->maxPersonId();
+    $run = $this->follow($this->handOff($inv, array('A' => true)));
+
+    $this->assertTrue($this->isConfirmation($run['end']), 'ends on the confirmation page: '
+                      . var_export($run['end'], true) . ' after ' . implode(' ', $run['trace']));
+    $this->assertTrue(in_array('envsource:selectOrgIdentityAuthenticate', $run['trace'], true),
+                      'the EnvSource step ran');
+
+    $people = $this->newPeople($before);
+    $this->assertEqual(1, count($people), 'exactly one CoPerson, not one from the pipeline and another from the petition');
+    $person = (int)$people[0]['id'];
+    $this->assertEqual('A', $people[0]['status'], 'and it is Active');
+
+    $this->assertEqual('Pat Claimed', $this->fx->scalar(
+      "SELECT CONCAT(given, ' ', family) FROM cm_names WHERE co_person_id = " . $person
+      . ' AND primary_name = true AND name_id IS NULL AND deleted IS NOT true'), 'the claimed name is its primary name');
+    $this->assertEqual(1, (int)$this->fx->scalar(
+      'SELECT count(*) FROM cm_email_addresses WHERE co_person_id = ' . $person . " AND mail = '" . self::Invited . "'"
+      . ' AND email_address_id IS NULL AND deleted IS NOT true'), 'the claimed email');
+
+    $links = 'FROM cm_co_org_identity_links WHERE co_person_id = ' . $person
+             . ' AND co_org_identity_link_id IS NULL AND deleted IS NOT true';
+    $this->assertEqual(1, (int)$this->fx->scalar('SELECT count(*) ' . $links),
+                       'one OrgIdentity: the plugin reuses the source\'s for the login');
+    $orgId = (int)$this->fx->scalar('SELECT org_identity_id FROM cm_org_identity_source_records'
+                                    . ' WHERE org_identity_source_id = ' . (int)$ois);
+    $this->assertEqual($orgId, (int)$this->fx->scalar('SELECT org_identity_id ' . $links), 'the source\'s OrgIdentity');
+
+    $pt = $this->petitions()[0];
+    $this->assertEqual($person, (int)$pt['enrollee_co_person_id'], 'the petition names the CoPerson');
+    $this->assertEqual($orgId, (int)$pt['enrollee_org_identity_id'], 'and the OrgIdentity');
+
+    $this->assertEqual($person, $this->Req->existingMemberCoPersonId($this->coId, $sub), 'the login is attached');
+    $row = $this->invitationRow($inv['id']);
+    $this->assertEqual('responded', $row['status'], 'the response is committed');
+    $this->assertEqual($person, (int)$row['invitee_co_person_id'], 'for that CoPerson');
+  }
+
   public function testStartWithoutBindingIsRefused() {
     $this->loginAs($this->sub('walk-in'), array(self::Invited));
 

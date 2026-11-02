@@ -15,6 +15,7 @@
 App::uses('CoPetitionsController', 'Controller');
 App::uses('ApplicationTeamEnrollerCoPetitionsController', 'ApplicationTeamEnroller.Controller');
 App::uses('AteResponsesController', 'ApplicationTeamEnroller.Controller');
+App::uses('EnvSourceCoPetitionsController', 'EnvSource.Controller');
 App::uses('AteInvitation', 'ApplicationTeamEnroller.Model');
 App::uses('ComponentCollection', 'Controller');
 App::uses('SessionComponent', 'Controller/Component');
@@ -99,6 +100,13 @@ class AteWedgePetitionsHarness extends ApplicationTeamEnrollerCoPetitionsControl
   }
 }
 
+/** EnvSource's own petition steps, for a flow with an EnvSource enrollment source. */
+class AteEnvSourcePetitionsHarness extends EnvSourceCoPetitionsController {
+  use AteControllerHarness, AtePetitionDriver {
+    AtePetitionDriver::redirect insteadof AteControllerHarness;
+  }
+}
+
 class AteNewcomerResponsesHarness extends AteResponsesController {
   use AteControllerHarness;
 
@@ -153,13 +161,14 @@ abstract class AtePetitionTestCase extends AteEngineTestCase {
 
     try {
       $this->fx->query('UPDATE cm_ate_invitations SET co_petition_id = NULL WHERE co_id IN (' . $cos . ')');
+      // An enrollment source records the petition it created an OrgIdentity for
+      $this->fx->query('DELETE FROM cm_org_identity_source_records WHERE co_petition_id IN (' . $pts . ')');
       $this->fx->query('DELETE FROM cm_co_petition_history_records WHERE co_petition_id IN (' . $pts . ')');
       $this->fx->query('DELETE FROM cm_co_petition_attributes WHERE co_petition_id IN (' . $pts . ')');
       $this->fx->query('DELETE FROM cm_co_petitions WHERE co_id IN (' . $cos . ')');
 
       $this->fx->cleanup($this->fx->pluginRowsFor(array($this->coId, $this->otherCoId)) + array(
-        'cm_names' => 'co_person_id IN (' . $ppl . ')',
-        'cm_co_person_roles' => 'co_person_id IN (' . $ppl . ')',
+          'cm_co_person_roles' => 'co_person_id IN (' . $ppl . ')',
         'cm_co_people' => 'co_id IN (' . $cos . ')'
       ));
     } finally {
@@ -174,7 +183,8 @@ abstract class AtePetitionTestCase extends AteEngineTestCase {
     CakeSession::delete('ApplicationTeamEnroller');
     CakeSession::delete('Auth.User');
 
-    foreach(array('OIDC_CLAIM_email', 'REDIRECT_OIDC_CLAIM_email') as $v) {
+    foreach(array('OIDC_CLAIM_email', 'REDIRECT_OIDC_CLAIM_email', 'REDIRECT_OIDC_CLAIM_given_name',
+                  'REDIRECT_OIDC_CLAIM_family_name', 'REDIRECT_OIDC_CLAIM_sub') as $v) {
       unset($_SERVER[$v]);
       putenv($v);
     }
@@ -271,6 +281,10 @@ abstract class AtePetitionTestCase extends AteEngineTestCase {
       $h = AteCorePetitionsHarness::harnessBuild('co_petitions', $this->coId);
       $h->plugin = null;
       $h->request->params['plugin'] = null;
+    } elseif($controller === 'env_source_co_petitions') {
+      $h = AteEnvSourcePetitionsHarness::harnessBuild('env_source_co_petitions', $this->coId);
+      $h->plugin = 'EnvSource';
+      $h->request->params['plugin'] = 'env_source';
     } else {
       $h = AteWedgePetitionsHarness::harnessBuild($controller, $this->coId);
       $h->AteEnrollmentRequest->emailConfig = AteRecordingTransport::emailConfig();
@@ -293,19 +307,22 @@ abstract class AtePetitionTestCase extends AteEngineTestCase {
       // The form's hidden fields (View/CoPetitions/petition-attributes.inc)
       'EnrolleeCoPerson' => array(
         'co_id' => $this->coId,
-        'status' => 'P',
-        'Name' => array(
-          $this->nameAttrId => array(
-            'co_enrollment_attribute_id' => $this->nameAttrId,
-            'given' => 'Pat',
-            'family' => 'Newcomer',
-            'type' => 'official',
-            'primary_name' => true,
-            'language' => ''
-          )
-        )
+        'status' => 'P'
       )
     );
+
+    if($this->nameAttrId) {
+      $data['EnrolleeCoPerson']['Name'] = array(
+        $this->nameAttrId => array(
+          'co_enrollment_attribute_id' => $this->nameAttrId,
+          'given' => 'Pat',
+          'family' => 'Newcomer',
+          'type' => 'official',
+          'primary_name' => true,
+          'language' => ''
+        )
+      );
+    }
 
     if($this->roleAttrId) {
       $data['EnrolleeCoPersonRole'] = array('affiliation' => 'member');
@@ -345,7 +362,8 @@ abstract class AtePetitionTestCase extends AteEngineTestCase {
         }
       }
 
-      if(!in_array($controller, array('co_petitions', 'application_team_enroller_co_petitions'), true)) {
+      if(!in_array($controller, array('co_petitions', 'application_team_enroller_co_petitions',
+                                      'env_source_co_petitions'), true)) {
         return array('trace' => $trace, 'stopped_at' => null, 'end' => $url, 'shown' => null, 'harness' => $last);
       }
 
@@ -361,7 +379,8 @@ abstract class AtePetitionTestCase extends AteEngineTestCase {
         }
       }
 
-      $trace[] = (($controller === 'co_petitions') ? 'core' : 'wedge') . ':' . $action
+      $who = array('co_petitions' => 'core', 'env_source_co_petitions' => 'envsource');
+      $trace[] = (isset($who[$controller]) ? $who[$controller] : 'wedge') . ':' . $action
                  . (isset($named['done']) ? '/done:' . (($named['done'] === 'core') ? 'core' : 'wedge') : '');
 
       $h = $this->petitionController($controller);

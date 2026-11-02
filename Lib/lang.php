@@ -309,5 +309,7 @@ If you have questions, please contact the person who invited you.',
   'pl.applicationteamenroller.er.newcomer_flow.verification' => 'The newcomer enrollment flow must not confirm email addresses (set Email Confirmation Mode to "None").',
   'pl.applicationteamenroller.er.newcomer_flow.match' => 'The newcomer enrollment flow must not use the Self or Select Identity Matching policy.',
   'pl.applicationteamenroller.er.newcomer_flow.role' => 'The newcomer enrollment flow must collect a CO Person Role attribute (for example Affiliation), because Registry makes a new CO Person Active only through a CO Person Role.',
+  'pl.applicationteamenroller.er.newcomer_flow.name' => 'The newcomer enrollment flow must give the new CO Person a name: collect a required Name attribute, or attach an Organizational Identity Source (such as an EnvSource for CILogon claims) in Authenticate mode with an active pipeline that syncs Name on add.',
+  'pl.applicationteamenroller.er.newcomer_flow.identify' => 'The newcomer enrollment flow\'s Organizational Identity Source is attached in Identify mode, which Registry runs only when email confirmation is on, so it never runs in this flow. Attach it in Authenticate mode, or collect a Name attribute.',
   'pl.applicationteamenroller.er.newcomer_flow.wedge' => 'The newcomer enrollment flow must have an active Application Team Enroller wedge attached.'
 );
